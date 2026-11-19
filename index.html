@@ -14,8 +14,8 @@
     justify-content: center;
     height: 100vh;
     margin: 0;
-    overflow: hidden; /* 画面のスクロールを防止 */
-    touch-action: none; /* スマホの引っ張り更新などを防止 */
+    overflow: hidden;
+    touch-action: none;
     font-family: sans-serif;
   }
   canvas {
@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>画面を指で左右に動かして操作（弾は自動発射）</p>
+  <p>指で左右に移動 ／ 緑の「P」を取ると3方向ショット！</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -43,6 +43,7 @@
   let score = 0;
   let isGameOver = false;
   let frameCount = 0;
+  let powerUpTimer = 0; // 3方向ショットの残り時間
 
   const player = {
     x: canvas.width / 2 - 20,
@@ -54,15 +55,14 @@
 
   let bullets = [];
   let enemies = [];
+  let items = []; // アイテムのリスト
 
-  // スマホのタッチ操作（指の位置に合わせて自機を移動）
   function movePlayer(clientX) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const touchX = (clientX - rect.left) * scaleX;
     player.x = touchX - player.width / 2;
 
-    // 画面の外に出ないように制限
     if (player.x < 0) player.x = 0;
     if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
   }
@@ -83,7 +83,6 @@
     }
   }, { passive: false });
 
-  // パソコンのマウスでもテストできるように対応
   canvas.addEventListener("mousemove", (e) => {
     if (!isGameOver) movePlayer(e.clientX);
   });
@@ -95,9 +94,11 @@
     score = 0;
     isGameOver = false;
     frameCount = 0;
+    powerUpTimer = 0;
     player.x = canvas.width / 2 - 20;
     bullets = [];
     enemies = [];
+    items = [];
     loop();
   }
 
@@ -109,6 +110,19 @@
         width: 35,
         height: 35,
         speed: 2.5 + Math.random() * 2.5
+      });
+    }
+  }
+
+  // パワーアップアイテムをときどき発生させる
+  function spawnItem() {
+    if (Math.random() < 0.004) { // 敵よりレアな出現率
+      items.push({
+        x: Math.random() * (canvas.width - 30),
+        y: -30,
+        width: 30,
+        height: 30,
+        speed: 2.5
       });
     }
   }
@@ -139,19 +153,47 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     frameCount++;
 
-    // 15フレームごとに自動で弾を発射
+    // パワーアップの残り時間を減らす
+    if (powerUpTimer > 0) {
+      powerUpTimer--;
+    }
+
+    // 弾の発射処理（15フレームごと）
     if (frameCount % 15 === 0) {
+      const centerX = player.x + player.width / 2 - 3;
+      // 真ん中の弾（通常時もパワーアップ時も発射）
       bullets.push({
-        x: player.x + player.width / 2 - 3,
+        x: centerX,
         y: player.y,
         width: 6,
         height: 15,
-        speed: 9
+        vx: 0, // 横方向の速度
+        vy: 9  // 縦方向の速度
       });
+
+      // パワーアップ中は左右斜めにも追加発射！
+      if (powerUpTimer > 0) {
+        bullets.push({
+          x: centerX,
+          y: player.y,
+          width: 6,
+          height: 15,
+          vx: -2.2, // 左斜めへ
+          vy: 8.7
+        });
+        bullets.push({
+          x: centerX,
+          y: player.y,
+          width: 6,
+          height: 15,
+          vx: 2.2, // 右斜めへ
+          vy: 8.7
+        });
+      }
     }
 
-    // プレイヤー描画
-    ctx.fillStyle = player.color;
+    // プレイヤー描画（パワーアップ中は機体が金色に光る！）
+    ctx.fillStyle = powerUpTimer > 0 ? "#ffd700" : player.color;
     ctx.beginPath();
     ctx.moveTo(player.x + player.width / 2, player.y);
     ctx.lineTo(player.x, player.y + player.height);
@@ -160,12 +202,44 @@
     ctx.fill();
 
     // 弾の更新と描画
-    ctx.fillStyle = "#ffff00";
+    ctx.fillStyle = powerUpTimer > 0 ? "#00ffff" : "#ffff00";
     for (let i = bullets.length - 1; i >= 0; i--) {
       let b = bullets[i];
-      b.y -= b.speed;
+      b.x += b.vx;
+      b.y -= b.vy;
       ctx.fillRect(b.x, b.y, b.width, b.height);
-      if (b.y < 0) bullets.splice(i, 1);
+      if (b.y < 0 || b.x < 0 || b.x > canvas.width) {
+        bullets.splice(i, 1);
+      }
+    }
+
+    // アイテムの生成・移動・描画・取得判定
+    spawnItem();
+    for (let i = items.length - 1; i >= 0; i--) {
+      let item = items[i];
+      item.y += item.speed;
+
+      // 緑の丸いカプセルと「P」の文字を描画
+      ctx.fillStyle = "#00ff66";
+      ctx.beginPath();
+      ctx.arc(item.x + item.width / 2, item.y + item.height / 2, item.width / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 18px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("P", item.x + item.width / 2, item.y + item.height / 2 + 1);
+
+      // 自機がアイテムに触れたらパワーアップ！
+      if (isColliding(player, item)) {
+        powerUpTimer = 600; // 約10秒間（60フレーム×10秒）
+        score += 300;       // ボーナス点
+        items.splice(i, 1);
+        continue;
+      }
+
+      if (item.y > canvas.height) items.splice(i, 1);
     }
 
     // 敵の更新と描画
@@ -192,11 +266,18 @@
       if (e && e.y > canvas.height) enemies.splice(i, 1);
     }
 
-    // スコア表示
+    // スコアとパワーアップ残り時間表示
     ctx.fillStyle = "white";
     ctx.font = "20px sans-serif";
     ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     ctx.fillText("SCORE: " + score, 15, 30);
+
+    if (powerUpTimer > 0) {
+      ctx.fillStyle = "#00ff66";
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText("3-WAY: " + Math.ceil(powerUpTimer / 60) + "s", 15, 55);
+    }
 
     requestAnimationFrame(loop);
   }
