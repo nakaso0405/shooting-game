@@ -1,4 +1,4 @@
-　<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>指で移動 ／ WAVE 10でボスが登場！</p>
+  <p>指で移動 ／ いろんなタイプの敵を倒して強化しよう！</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -48,7 +48,6 @@
   let killsToNextWave = 10;
   let frameCount = 0;
 
-  // プレイヤーのステータス
   const player = {
     x: canvas.width / 2 - 20,
     y: canvas.height - 65,
@@ -68,7 +67,7 @@
   let enemies = [];
   let enemyBullets = [];
   let choices = [];
-  let boss = null; // WAVE 10のボス
+  let boss = null;
 
   const upgradePool = [
     { id: "multi", title: "拡散ショット", desc: "弾の同時発射数を +2", apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); } },
@@ -145,7 +144,6 @@
           player.invincibleTimer = 60;
           gameState = "playing";
 
-          // 10ウェーブ目に入ったらボス出現！
           if (wave === 10) {
             spawnBoss();
           }
@@ -205,18 +203,111 @@
     gameState = "playing";
   }
 
+  // 敵の種類を選んで生成する関数
   function spawnEnemy() {
-    const spawnChance = Math.min(0.08, 0.032 + wave * 0.006);
-    if (Math.random() < spawnChance) {
-      const hp = 1 + Math.floor((wave - 1) / 2);
+    const spawnChance = Math.min(0.085, 0.035 + wave * 0.006);
+    if (Math.random() >= spawnChance) return;
+
+    // 出現できる敵の種類をWAVEに応じて増やす
+    const availableTypes = ["normal"];
+    if (wave >= 2) {
+      availableTypes.push("zigzag", "tank");
+    }
+    if (wave >= 3) {
+      availableTypes.push("dash");
+    }
+
+    const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+    const waveBonusHp = Math.floor((wave - 1) / 2);
+
+    if (type === "zigzag") {
+      const startX = 40 + Math.random() * (canvas.width - 80);
       enemies.push({
+        type: "zigzag",
+        x: startX,
+        baseX: startX,
+        y: -34,
+        width: 34,
+        height: 34,
+        hp: 1 + waveBonusHp,
+        speed: 2.3 + wave * 0.18,
+        phase: Math.random() * Math.PI * 2, // ジグザグの開始位置をずらす
+        scoreValue: 150,
+        color: "#bb55ff"
+      });
+    } else if (type === "dash") {
+      enemies.push({
+        type: "dash",
+        x: Math.random() * (canvas.width - 28),
+        y: -32,
+        width: 28,
+        height: 32,
+        hp: 1,
+        speed: 5.2 + wave * 0.35,
+        scoreValue: 200,
+        color: "#ffdd22"
+      });
+    } else if (type === "tank") {
+      enemies.push({
+        type: "tank",
+        x: Math.random() * (canvas.width - 48),
+        y: -48,
+        width: 48,
+        height: 48,
+        hp: 3 + waveBonusHp * 2,
+        speed: 1.5 + wave * 0.12,
+        scoreValue: 250,
+        color: "#ff8800"
+      });
+    } else {
+      // normal
+      enemies.push({
+        type: "normal",
         x: Math.random() * (canvas.width - 36),
         y: -36,
         width: 36,
         height: 36,
-        hp: hp,
-        speed: 2.2 + Math.random() * 1.8 + wave * 0.25
+        hp: 1 + waveBonusHp,
+        speed: 2.4 + Math.random() * 1.5 + wave * 0.22,
+        scoreValue: 100,
+        color: "#ff4466"
       });
+    }
+  }
+
+  // 敵の種類ごとに動きと見た目を更新・描画する関数
+  function updateAndDrawEnemy(e) {
+    e.y += e.speed;
+
+    if (e.type === "zigzag") {
+      e.phase += 0.08;
+      e.x = e.baseX + Math.sin(e.phase) * 45;
+      // 画面外に出ないように制限
+      if (e.x < 0) e.x = 0;
+      if (e.x > canvas.width - e.width) e.x = canvas.width - e.width;
+
+      // ダイヤ型（ひし形）で描画
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.width / 2, e.y);
+      ctx.lineTo(e.x + e.width, e.y + e.height / 2);
+      ctx.lineTo(e.x + e.width / 2, e.y + e.height);
+      ctx.lineTo(e.x, e.y + e.height / 2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === "dash") {
+      // 下向きの鋭い三角形で描画
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.width / 2, e.y + e.height);
+      ctx.lineTo(e.x, e.y);
+      ctx.lineTo(e.x + e.width, e.y);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // normal / tank は四角形で描画
+      ctx.fillStyle = e.color;
+      ctx.fillRect(e.x, e.y, e.width, e.height);
     }
   }
 
@@ -250,13 +341,11 @@
   function updateAndDrawBoss() {
     if (!boss) return;
 
-    // 左右に移動
     boss.x += boss.vx;
     if (boss.x <= 10 || boss.x + boss.width >= canvas.width - 10) {
       boss.vx *= -1;
     }
 
-    // 定期的に3方向へ弾を発射
     boss.shootTimer++;
     if (boss.shootTimer >= 55) {
       boss.shootTimer = 0;
@@ -279,29 +368,24 @@
       }
     }
 
-    // ボス本体の描画
     ctx.fillStyle = "#b80028";
     ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
     ctx.strokeStyle = "#ff4466";
     ctx.lineWidth = 3;
     ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
 
-    // ボスの目（コア）
     ctx.fillStyle = "#ffcc00";
     ctx.fillRect(boss.x + 22, boss.y + 22, 18, 14);
     ctx.fillRect(boss.x + boss.width - 40, boss.y + 22, 18, 14);
 
-    // ボス名とHP表示
     ctx.fillStyle = "#ff6688";
     ctx.font = "bold 13px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 10);
 
-    // プレイヤー弾とボスの当たり判定
     for (let j = bullets.length - 1; j >= 0; j--) {
       if (isColliding(bullets[j], boss)) {
         boss.hp -= bullets[j].damage;
-        // 絶対倒せないようにHPを1以上に保つ
         if (boss.hp < 1) {
           boss.hp = 1;
         }
@@ -310,7 +394,6 @@
       }
     }
 
-    // プレイヤーとボスの接触判定
     if (player.invincibleTimer === 0 && isColliding(player, boss)) {
       player.hp -= 1;
       player.invincibleTimer = 60;
@@ -382,7 +465,6 @@
         shootBullets();
       }
 
-      // プレイヤー描画（無敵中は点滅）
       if (player.invincibleTimer === 0 || Math.floor(player.invincibleTimer / 4) % 2 === 0) {
         ctx.fillStyle = player.color;
         ctx.beginPath();
@@ -393,7 +475,6 @@
         ctx.fill();
       }
 
-      // プレイヤー弾の更新と描画
       ctx.fillStyle = "#ffff00";
       for (let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
@@ -405,15 +486,11 @@
         }
       }
 
-      // WAVE 10未満は通常ザコ敵、WAVE 10はボス戦
       if (wave < 10) {
         spawnEnemy();
         for (let i = enemies.length - 1; i >= 0; i--) {
           let e = enemies[i];
-          e.y += e.speed;
-
-          ctx.fillStyle = e.hp > 1 ? "#ff8800" : "#ff4466";
-          ctx.fillRect(e.x, e.y, e.width, e.height);
+          updateAndDrawEnemy(e);
 
           if (player.invincibleTimer === 0 && isColliding(player, e)) {
             player.hp -= 1;
@@ -433,7 +510,7 @@
               bullets.splice(j, 1);
               if (e.hp <= 0) {
                 enemies.splice(i, 1);
-                score += 100;
+                score += e.scoreValue;
                 killsInWave++;
                 destroyed = true;
               }
@@ -457,7 +534,6 @@
         updateAndDrawBoss();
       }
 
-      // ボスの弾の更新・描画・当たり判定
       ctx.fillStyle = "#ff55aa";
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         let eb = enemyBullets[i];
@@ -481,7 +557,6 @@
         }
       }
 
-      // HUD（ステータス表示）
       ctx.fillStyle = "white";
       ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "left";
