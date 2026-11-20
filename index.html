@@ -34,13 +34,13 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>指で移動 ／ いろんなタイプの敵を倒して強化しよう！</p>
+  <p>WAVE 5で中ボス、WAVE 10のラスボス（HP 1500）を倒してクリアを目指せ！</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
 
-  // ゲーム状態: "playing", "choosing", "gameover"
+  // ゲーム状態: "playing", "choosing", "gameover", "victory"
   let gameState = "playing";
   let score = 0;
   let wave = 1;
@@ -97,17 +97,36 @@
     }));
   }
 
-  function spawnBoss() {
+  function spawnMidBoss() {
     boss = {
+      type: "mid",
+      name: "Δ-GUARDIAN",
+      x: canvas.width / 2 - 42,
+      y: 80,
+      width: 84,
+      height: 54,
+      hp: 65,
+      maxHp: 65,
+      vx: 2.6,
+      shootTimer: 0,
+      patternCount: 0
+    };
+  }
+
+  // WAVE 10のラスボス（HP 1500）
+  function spawnFinalBoss() {
+    boss = {
+      type: "final",
       name: "Ω-OVERLORD",
-      x: canvas.width / 2 - 55,
-      y: 75,
-      width: 110,
-      height: 70,
-      hp: 9999,
-      maxHp: 9999,
-      vx: 2.2,
-      shootTimer: 0
+      x: canvas.width / 2 - 58,
+      y: 85,
+      width: 116,
+      height: 74,
+      hp: 1500,
+      maxHp: 1500,
+      vx: 3.1,
+      shootTimer: 0,
+      patternCount: 0
     };
   }
 
@@ -125,7 +144,7 @@
     const x = (clientX - rect.left) * (canvas.width / rect.width);
     const y = (clientY - rect.top) * (canvas.height / rect.height);
 
-    if (gameState === "gameover") {
+    if (gameState === "gameover" || gameState === "victory") {
       resetGame();
       return;
     }
@@ -141,11 +160,14 @@
           bullets = [];
           enemies = [];
           enemyBullets = [];
+          boss = null;
           player.invincibleTimer = 60;
           gameState = "playing";
 
-          if (wave === 10) {
-            spawnBoss();
+          if (wave === 5) {
+            spawnMidBoss();
+          } else if (wave === 10) {
+            spawnFinalBoss();
           }
           break;
         }
@@ -203,12 +225,10 @@
     gameState = "playing";
   }
 
-  // 敵の種類を選んで生成する関数
   function spawnEnemy() {
     const spawnChance = Math.min(0.085, 0.035 + wave * 0.006);
     if (Math.random() >= spawnChance) return;
 
-    // 出現できる敵の種類をWAVEに応じて増やす
     const availableTypes = ["normal"];
     if (wave >= 2) {
       availableTypes.push("zigzag", "tank");
@@ -231,7 +251,7 @@
         height: 34,
         hp: 1 + waveBonusHp,
         speed: 2.3 + wave * 0.18,
-        phase: Math.random() * Math.PI * 2, // ジグザグの開始位置をずらす
+        phase: Math.random() * Math.PI * 2,
         scoreValue: 150,
         color: "#bb55ff"
       });
@@ -260,7 +280,6 @@
         color: "#ff8800"
       });
     } else {
-      // normal
       enemies.push({
         type: "normal",
         x: Math.random() * (canvas.width - 36),
@@ -275,18 +294,15 @@
     }
   }
 
-  // 敵の種類ごとに動きと見た目を更新・描画する関数
   function updateAndDrawEnemy(e) {
     e.y += e.speed;
 
     if (e.type === "zigzag") {
       e.phase += 0.08;
       e.x = e.baseX + Math.sin(e.phase) * 45;
-      // 画面外に出ないように制限
       if (e.x < 0) e.x = 0;
       if (e.x > canvas.width - e.width) e.x = canvas.width - e.width;
 
-      // ダイヤ型（ひし形）で描画
       ctx.fillStyle = e.color;
       ctx.beginPath();
       ctx.moveTo(e.x + e.width / 2, e.y);
@@ -296,7 +312,6 @@
       ctx.closePath();
       ctx.fill();
     } else if (e.type === "dash") {
-      // 下向きの鋭い三角形で描画
       ctx.fillStyle = e.color;
       ctx.beginPath();
       ctx.moveTo(e.x + e.width / 2, e.y + e.height);
@@ -305,7 +320,6 @@
       ctx.closePath();
       ctx.fill();
     } else {
-      // normal / tank は四角形で描画
       ctx.fillStyle = e.color;
       ctx.fillRect(e.x, e.y, e.width, e.height);
     }
@@ -347,54 +361,130 @@
     }
 
     boss.shootTimer++;
-    if (boss.shootTimer >= 55) {
-      boss.shootTimer = 0;
-      const originX = boss.x + boss.width / 2 - 5;
-      const originY = boss.y + boss.height;
-      const speeds = [
-        { vx: -1.8, vy: 4.5 },
-        { vx: 0, vy: 5.2 },
-        { vx: 1.8, vy: 4.5 }
-      ];
-      for (const s of speeds) {
-        enemyBullets.push({
-          x: originX,
-          y: originY,
-          width: 10,
-          height: 10,
-          vx: s.vx,
-          vy: s.vy
-        });
+    if (boss.type === "mid") {
+      if (boss.shootTimer >= 65) {
+        boss.shootTimer = 0;
+        const originX = boss.x + boss.width / 2 - 4;
+        const originY = boss.y + boss.height;
+        const speeds = [
+          { vx: -1.1, vy: 4.2 },
+          { vx: 1.1, vy: 4.2 }
+        ];
+        for (const s of speeds) {
+          enemyBullets.push({
+            x: originX,
+            y: originY,
+            width: 9,
+            height: 9,
+            vx: s.vx,
+            vy: s.vy
+          });
+        }
       }
+
+      ctx.fillStyle = "#5a189a";
+      ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+      ctx.strokeStyle = "#c77dff";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
+
+      ctx.fillStyle = "#00ffcc";
+      ctx.fillRect(boss.x + boss.width / 2 - 12, boss.y + 18, 24, 14);
+
+      const barWidth = 140;
+      const barX = (canvas.width - barWidth) / 2;
+      ctx.fillStyle = "#333";
+      ctx.fillRect(barX, boss.y - 16, barWidth, 8);
+      ctx.fillStyle = "#c77dff";
+      ctx.fillRect(barX, boss.y - 16, barWidth * Math.max(0, boss.hp / boss.maxHp), 8);
+
+      ctx.fillStyle = "#e0aaff";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 22);
+    } else {
+      if (boss.shootTimer >= 42) {
+        boss.shootTimer = 0;
+        boss.patternCount++;
+        const originX = boss.x + boss.width / 2 - 5;
+        const originY = boss.y + boss.height;
+        const speeds = (boss.patternCount % 3 === 0)
+          ? [
+              { vx: -3.2, vy: 4.5 },
+              { vx: -1.6, vy: 5.2 },
+              { vx: 0, vy: 5.8 },
+              { vx: 1.6, vy: 5.2 },
+              { vx: 3.2, vy: 4.5 }
+            ]
+          : [
+              { vx: -2.0, vy: 5.0 },
+              { vx: 0, vy: 5.6 },
+              { vx: 2.0, vy: 5.0 }
+            ];
+        for (const s of speeds) {
+          enemyBullets.push({
+            x: originX,
+            y: originY,
+            width: 10,
+            height: 10,
+            vx: s.vx,
+            vy: s.vy
+          });
+        }
+      }
+
+      ctx.fillStyle = "#9e0022";
+      ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+      ctx.strokeStyle = "#ff4466";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
+
+      ctx.fillStyle = "#ffcc00";
+      ctx.fillRect(boss.x + 24, boss.y + 24, 18, 14);
+      ctx.fillRect(boss.x + boss.width - 42, boss.y + 24, 18, 14);
+
+      const barWidth = 170;
+      const barX = (canvas.width - barWidth) / 2;
+      ctx.fillStyle = "#333";
+      ctx.fillRect(barX, boss.y - 16, barWidth, 8);
+      ctx.fillStyle = "#ff4466";
+      ctx.fillRect(barX, boss.y - 16, barWidth * Math.max(0, boss.hp / boss.maxHp), 8);
+
+      ctx.fillStyle = "#ff7799";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 22);
     }
-
-    ctx.fillStyle = "#b80028";
-    ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-    ctx.strokeStyle = "#ff4466";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
-
-    ctx.fillStyle = "#ffcc00";
-    ctx.fillRect(boss.x + 22, boss.y + 22, 18, 14);
-    ctx.fillRect(boss.x + boss.width - 40, boss.y + 22, 18, 14);
-
-    ctx.fillStyle = "#ff6688";
-    ctx.font = "bold 13px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 10);
 
     for (let j = bullets.length - 1; j >= 0; j--) {
       if (isColliding(bullets[j], boss)) {
         boss.hp -= bullets[j].damage;
-        if (boss.hp < 1) {
-          boss.hp = 1;
-        }
         bullets.splice(j, 1);
-        score += 25;
+
+        if (boss.type === "mid") {
+          score += 30;
+          if (boss.hp <= 0) {
+            score += 1000;
+            boss = null;
+            enemyBullets = [];
+            generateChoices();
+            gameState = "choosing";
+            return;
+          }
+        } else if (boss.type === "final") {
+          score += 50;
+          if (boss.hp <= 0) {
+            score += 3000;
+            boss = null;
+            enemyBullets = [];
+            gameState = "victory";
+            return;
+          }
+        }
       }
     }
 
-    if (player.invincibleTimer === 0 && isColliding(player, boss)) {
+    if (boss && player.invincibleTimer === 0 && isColliding(player, boss)) {
       player.hp -= 1;
       player.invincibleTimer = 60;
       if (player.hp <= 0) {
@@ -454,6 +544,28 @@
     ctx.fillText("タップして最初から挑戦", canvas.width / 2, canvas.height / 2 + 80);
   }
 
+  function drawVictoryScreen() {
+    ctx.fillStyle = "rgba(0, 10, 20, 0.88)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "bold 30px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("GAME CLEAR!", canvas.width / 2, canvas.height / 2 - 55);
+
+    ctx.fillStyle = "#00ffcc";
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText("Ω-OVERLORD 撃破おめでとう！", canvas.width / 2, canvas.height / 2 - 18);
+
+    ctx.fillStyle = "white";
+    ctx.font = "18px sans-serif";
+    ctx.fillText("FINAL SCORE: " + score, canvas.width / 2, canvas.height / 2 + 22);
+
+    ctx.fillStyle = "#e0e0e0";
+    ctx.font = "15px sans-serif";
+    ctx.fillText("タップしてもう一度遊ぶ", canvas.width / 2, canvas.height / 2 + 72);
+  }
+
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -486,7 +598,9 @@
         }
       }
 
-      if (wave < 10) {
+      if (wave === 5 || wave === 10) {
+        updateAndDrawBoss();
+      } else {
         spawnEnemy();
         for (let i = enemies.length - 1; i >= 0; i--) {
           let e = enemies[i];
@@ -530,8 +644,6 @@
             enemies.splice(i, 1);
           }
         }
-      } else {
-        updateAndDrawBoss();
       }
 
       ctx.fillStyle = "#ff55aa";
@@ -560,12 +672,16 @@
       ctx.fillStyle = "white";
       ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "left";
-      if (wave < 10) {
-        ctx.fillText("WAVE " + wave + " (" + killsInWave + "/" + killsToNextWave + ")", 12, 24);
-      } else {
-        ctx.fillStyle = "#ff5577";
-        ctx.fillText("WAVE 10 - BOSS BATTLE", 12, 24);
+      if (wave === 5) {
+        ctx.fillStyle = "#c77dff";
+        ctx.fillText("WAVE 5 - MID-BOSS", 12, 24);
         ctx.fillStyle = "white";
+      } else if (wave === 10) {
+        ctx.fillStyle = "#ff5577";
+        ctx.fillText("WAVE 10 - FINAL BOSS", 12, 24);
+        ctx.fillStyle = "white";
+      } else {
+        ctx.fillText("WAVE " + wave + " (" + killsInWave + "/" + killsToNextWave + ")", 12, 24);
       }
       ctx.fillText("SCORE: " + score, 12, 44);
 
@@ -576,6 +692,8 @@
       drawChoosingScreen();
     } else if (gameState === "gameover") {
       drawGameOverScreen();
+    } else if (gameState === "victory") {
+      drawVictoryScreen();
     }
 
     requestAnimationFrame(loop);
