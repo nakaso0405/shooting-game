@@ -57,9 +57,7 @@
       highScore = score;
       try {
         localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
-      } catch (e) {
-        // 保存領域が使えない環境でもゲーム自体は続行
-      }
+      } catch (e) {}
     }
   }
 
@@ -148,10 +146,10 @@
     boss = {
       type: "mid",
       name: "Δ-GUARDIAN",
-      x: canvas.width / 2 - 42,
+      x: canvas.width / 2 - 46,
       y: 80,
-      width: 84,
-      height: 54,
+      width: 92,
+      height: 60,
       hp: 65,
       maxHp: 65,
       vx: 2.6,
@@ -164,10 +162,10 @@
     boss = {
       type: "final",
       name: "Ω-OVERLORD",
-      x: canvas.width / 2 - 58,
+      x: canvas.width / 2 - 64,
       y: 85,
-      width: 116,
-      height: 74,
+      width: 128,
+      height: 82,
       hp: 1500,
       maxHp: 1500,
       vx: 3.1,
@@ -321,51 +319,142 @@
         type: "zigzag",
         x: startX,
         baseX: startX,
-        y: -34,
-        width: 34,
-        height: 34,
+        y: -38,
+        width: 38,
+        height: 38,
         hp: 1 + waveBonusHp,
         speed: 2.3 + wave * 0.18,
         phase: Math.random() * Math.PI * 2,
-        scoreValue: 150,
-        color: "#bb55ff"
+        scoreValue: 150
       });
     } else if (type === "dash") {
       enemies.push({
         type: "dash",
-        x: Math.random() * (canvas.width - 28),
-        y: -32,
-        width: 28,
-        height: 32,
+        x: Math.random() * (canvas.width - 32),
+        y: -38,
+        width: 32,
+        height: 38,
         hp: 1,
         speed: 5.2 + wave * 0.35,
-        scoreValue: 200,
-        color: "#ffdd22"
+        scoreValue: 200
       });
     } else if (type === "tank") {
       enemies.push({
         type: "tank",
-        x: Math.random() * (canvas.width - 48),
-        y: -48,
-        width: 48,
-        height: 48,
+        x: Math.random() * (canvas.width - 52),
+        y: -52,
+        width: 52,
+        height: 52,
         hp: 3 + waveBonusHp * 2,
         speed: 1.5 + wave * 0.12,
-        scoreValue: 250,
-        color: "#ff8800"
+        scoreValue: 250
       });
     } else {
       enemies.push({
         type: "normal",
-        x: Math.random() * (canvas.width - 36),
-        y: -36,
-        width: 36,
-        height: 36,
+        x: Math.random() * (canvas.width - 38),
+        y: -38,
+        width: 38,
+        height: 38,
         hp: 1 + waveBonusHp,
         speed: 2.4 + Math.random() * 1.5 + wave * 0.22,
-        scoreValue: 100,
-        color: "#ff4466"
+        scoreValue: 100
       });
+    }
+  }
+
+  // 敵タイプごとのイラスト描画
+  function drawEnemyIllustration(e) {
+    const cx = e.x + e.width / 2;
+    const cy = e.y + e.height / 2;
+
+    if (e.type === "zigzag") {
+      // エイリアンUFO型（紫のドーム＋発光ポッド）
+      ctx.fillStyle = "#6a1b9a";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 4, e.width * 0.48, e.height * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e040fb";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // ガラスドーム
+      ctx.fillStyle = "#ea80fc";
+      ctx.beginPath();
+      ctx.arc(cx, cy - 3, e.width * 0.24, Math.PI, 0);
+      ctx.fill();
+
+      // 光るライト
+      ctx.fillStyle = "#00ffcc";
+      ctx.fillRect(cx - 10, cy + 3, 4, 4);
+      ctx.fillRect(cx - 2, cy + 5, 4, 4);
+      ctx.fillRect(cx + 6, cy + 3, 4, 4);
+    } else if (e.type === "dash") {
+      // 高速インターセプター機（黄色の鋭い翼＋ジェット炎）
+      ctx.fillStyle = "#ff5500";
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, e.y + 4);
+      ctx.lineTo(cx, e.y - 6 - (frameCount % 4));
+      ctx.lineTo(cx + 5, e.y + 4);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffaa00";
+      ctx.beginPath();
+      ctx.moveTo(cx, e.y + e.height);
+      ctx.lineTo(e.x, e.y + 6);
+      ctx.lineTo(cx, e.y + 14);
+      ctx.lineTo(e.x + e.width, e.y + 6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#fff59d";
+      ctx.beginPath();
+      ctx.moveTo(cx, e.y + e.height - 4);
+      ctx.lineTo(cx - 5, e.y + 12);
+      ctx.lineTo(cx + 5, e.y + 12);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === "tank") {
+      // 重装甲ゴーレムメカ（オレンジの重厚ボディ＋双門キャノン＋単眼）
+      ctx.fillStyle = "#bf360c";
+      ctx.fillRect(e.x + 4, e.y + 4, e.width - 8, e.height - 10);
+      ctx.strokeStyle = "#ff9800";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(e.x + 4, e.y + 4, e.width - 8, e.height - 10);
+
+      // 左右のキャノン砲
+      ctx.fillStyle = "#546e7a";
+      ctx.fillRect(e.x, e.y + 14, 6, e.height - 14);
+      ctx.fillRect(e.x + e.width - 6, e.y + 14, 6, e.height - 14);
+
+      // 装甲スリットと赤いモノアイ
+      ctx.fillStyle = "#263238";
+      ctx.fillRect(e.x + 11, e.y + 16, e.width - 22, 10);
+      ctx.fillStyle = "#ff1744";
+      ctx.beginPath();
+      ctx.arc(cx, e.y + 21, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // ノーマル小型戦闘機（赤のウイング＋コックピット）
+      ctx.fillStyle = "#c62828";
+      ctx.beginPath();
+      ctx.moveTo(cx, e.y + e.height);
+      ctx.lineTo(e.x, e.y + 10);
+      ctx.lineTo(e.x + 8, e.y + 4);
+      ctx.lineTo(e.x + e.width - 8, e.y + 4);
+      ctx.lineTo(e.x + e.width, e.y + 10);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = "#ff8a80";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // コックピット
+      ctx.fillStyle = "#ffeb3b";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 2, 5, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -377,27 +466,9 @@
       e.x = e.baseX + Math.sin(e.phase) * 45;
       if (e.x < 0) e.x = 0;
       if (e.x > canvas.width - e.width) e.x = canvas.width - e.width;
-
-      ctx.fillStyle = e.color;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.width / 2, e.y);
-      ctx.lineTo(e.x + e.width, e.y + e.height / 2);
-      ctx.lineTo(e.x + e.width / 2, e.y + e.height);
-      ctx.lineTo(e.x, e.y + e.height / 2);
-      ctx.closePath();
-      ctx.fill();
-    } else if (e.type === "dash") {
-      ctx.fillStyle = e.color;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.width / 2, e.y + e.height);
-      ctx.lineTo(e.x, e.y);
-      ctx.lineTo(e.x + e.width, e.y);
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      ctx.fillStyle = e.color;
-      ctx.fillRect(e.x, e.y, e.width, e.height);
     }
+
+    drawEnemyIllustration(e);
   }
 
   function isColliding(a, b) {
@@ -435,11 +506,13 @@
       boss.vx *= -1;
     }
 
+    const cx = boss.x + boss.width / 2;
+
     boss.shootTimer++;
     if (boss.type === "mid") {
       if (boss.shootTimer >= 65) {
         boss.shootTimer = 0;
-        const originX = boss.x + boss.width / 2 - 4;
+        const originX = cx - 4;
         const originY = boss.y + boss.height;
         const speeds = [
           { vx: -1.1, vy: 4.2 },
@@ -457,14 +530,34 @@
         }
       }
 
-      ctx.fillStyle = "#5a189a";
-      ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-      ctx.strokeStyle = "#c77dff";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
+      // 中ボス Δ-GUARDIAN のイラスト（双翼メカシップ＋発光コア）
+      ctx.fillStyle = "#4a148c";
+      ctx.beginPath();
+      ctx.moveTo(boss.x, boss.y + 12);
+      ctx.lineTo(boss.x + boss.width, boss.y + 12);
+      ctx.lineTo(boss.x + boss.width - 14, boss.y + boss.height - 6);
+      ctx.lineTo(cx, boss.y + boss.height + 6);
+      ctx.lineTo(boss.x + 14, boss.y + boss.height - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#e040fb";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
 
+      // 左右の砲門
+      ctx.fillStyle = "#7b1fa2";
+      ctx.fillRect(boss.x + 8, boss.y + 20, 12, 34);
+      ctx.fillRect(boss.x + boss.width - 20, boss.y + 20, 12, 34);
+
+      // 中央エネルギーコア
       ctx.fillStyle = "#00ffcc";
-      ctx.fillRect(boss.x + boss.width / 2 - 12, boss.y + 18, 24, 14);
+      ctx.beginPath();
+      ctx.arc(cx, boss.y + 28, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(cx - 3, boss.y + 25, 4, 0, Math.PI * 2);
+      ctx.fill();
 
       const barWidth = 140;
       const barX = (canvas.width - barWidth) / 2;
@@ -481,7 +574,7 @@
       if (boss.shootTimer >= 42) {
         boss.shootTimer = 0;
         boss.patternCount++;
-        const originX = boss.x + boss.width / 2 - 5;
+        const originX = cx - 5;
         const originY = boss.y + boss.height;
         const speeds = (boss.patternCount % 3 === 0)
           ? [
@@ -508,27 +601,73 @@
         }
       }
 
-      ctx.fillStyle = "#9e0022";
-      ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-      ctx.strokeStyle = "#ff4466";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(boss.x, boss.y, boss.width, boss.height);
+      // ラスボス Ω-OVERLORD のイラスト（巨大魔王戦艦＋角＋双眸＋牙）
+      // 左右の巨大な角
+      ctx.fillStyle = "#ff6f00";
+      ctx.beginPath();
+      ctx.moveTo(boss.x + 18, boss.y + 14);
+      ctx.lineTo(boss.x + 2, boss.y - 12);
+      ctx.lineTo(boss.x + 34, boss.y + 14);
+      ctx.fill();
 
-      ctx.fillStyle = "#ffcc00";
-      ctx.fillRect(boss.x + 24, boss.y + 24, 18, 14);
-      ctx.fillRect(boss.x + boss.width - 42, boss.y + 24, 18, 14);
+      ctx.beginPath();
+      ctx.moveTo(boss.x + boss.width - 18, boss.y + 14);
+      ctx.lineTo(boss.x + boss.width - 2, boss.y - 12);
+      ctx.lineTo(boss.x + boss.width - 34, boss.y + 14);
+      ctx.fill();
+
+      // メイン装甲ボディ
+      ctx.fillStyle = "#880e4f";
+      ctx.beginPath();
+      ctx.moveTo(boss.x + 12, boss.y + 10);
+      ctx.lineTo(boss.x + boss.width - 12, boss.y + 10);
+      ctx.lineTo(boss.x + boss.width, boss.y + 38);
+      ctx.lineTo(boss.x + boss.width - 22, boss.y + boss.height);
+      ctx.lineTo(boss.x + 22, boss.y + boss.height);
+      ctx.lineTo(boss.x, boss.y + 38);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#ff1744";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // 鋭いツインアイ
+      ctx.fillStyle = "#ffd600";
+      ctx.beginPath();
+      ctx.moveTo(cx - 34, boss.y + 28);
+      ctx.lineTo(cx - 10, boss.y + 36);
+      ctx.lineTo(cx - 30, boss.y + 42);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(cx + 34, boss.y + 28);
+      ctx.lineTo(cx + 10, boss.y + 36);
+      ctx.lineTo(cx + 30, boss.y + 42);
+      ctx.closePath();
+      ctx.fill();
+
+      // 下部の牙・レーザー砲口
+      ctx.fillStyle = "#eceff1";
+      for (let k = -2; k <= 2; k++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + k * 14 - 4, boss.y + boss.height - 8);
+        ctx.lineTo(cx + k * 14, boss.y + boss.height + 5);
+        ctx.lineTo(cx + k * 14 + 4, boss.y + boss.height - 8);
+        ctx.fill();
+      }
 
       const barWidth = 170;
       const barX = (canvas.width - barWidth) / 2;
       ctx.fillStyle = "#333";
-      ctx.fillRect(barX, boss.y - 16, barWidth, 8);
+      ctx.fillRect(barX, boss.y - 24, barWidth, 8);
       ctx.fillStyle = "#ff4466";
-      ctx.fillRect(barX, boss.y - 16, barWidth * Math.max(0, boss.hp / boss.maxHp), 8);
+      ctx.fillRect(barX, boss.y - 24, barWidth * Math.max(0, boss.hp / boss.maxHp), 8);
 
       ctx.fillStyle = "#ff7799";
       ctx.font = "bold 12px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 22);
+      ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 30);
     }
 
     for (let j = bullets.length - 1; j >= 0; j--) {
@@ -572,7 +711,6 @@
     ctx.fillStyle = "#05050a";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // タイトルロゴ
     ctx.fillStyle = "#00ffcc";
     ctx.font = "bold 24px sans-serif";
     ctx.textAlign = "center";
@@ -582,7 +720,6 @@
     ctx.font = "bold 28px sans-serif";
     ctx.fillText("SHOOTING", canvas.width / 2, 150);
 
-    // ハイスコア枠
     ctx.fillStyle = "#111927";
     ctx.strokeStyle = "#ffd700";
     ctx.lineWidth = 2;
@@ -597,7 +734,6 @@
     ctx.font = "bold 24px sans-serif";
     ctx.fillText(String(highScore), canvas.width / 2, 254);
 
-    // ゲームスタートボタン
     const startBtn = getStartButtonRect();
     ctx.fillStyle = "#00ffcc";
     ctx.fillRect(startBtn.x, startBtn.y, startBtn.width, startBtn.height);
