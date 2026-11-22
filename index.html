@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>画面をタッチ＆スライド（仮想ジョイスティック）で上下左右に移動！</p>
+  <p>画面をタッチ＆スライドして上下左右に移動！</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -145,7 +145,7 @@
     color: "#00ffcc"
   };
 
-  // 仮想ジョイスティック状態
+  // 仮想ジョイスティック状態（表示はオフ）
   const joystick = {
     active: false,
     touchId: null,
@@ -219,35 +219,8 @@
   }
 
   function drawVirtualJoystick() {
-    if (!joystick.active) return;
-
-    ctx.save();
-    // 外枠リング
-    ctx.beginPath();
-    ctx.arc(joystick.baseX, joystick.baseY, joystick.maxRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0, 255, 204, 0.12)";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(0, 255, 204, 0.45)";
-    ctx.stroke();
-
-    // 中心からスティックへのガイド線
-    ctx.beginPath();
-    ctx.moveTo(joystick.baseX, joystick.baseY);
-    ctx.lineTo(joystick.stickX, joystick.stickY);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(0, 255, 204, 0.35)";
-    ctx.stroke();
-
-    // 内側のツマミ
-    ctx.beginPath();
-    ctx.arc(joystick.stickX, joystick.stickY, 18, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0, 255, 204, 0.5)";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-    ctx.stroke();
-    ctx.restore();
+    // 仮想ジョイスティックの表示は非表示に設定済み
+    return;
   }
 
   let bullets = [];
@@ -1239,7 +1212,6 @@
         }
       }
 
-      // 仮想ジョイスティックを前面に半透明描画
       drawVirtualJoystick();
 
       ctx.fillStyle = "white";
