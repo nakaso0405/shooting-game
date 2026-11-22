@@ -151,7 +151,7 @@
   let boss = null;
 
   const upgradePool = [
-    { id: "multi", title: "拡散ショット", desc: "弾の同時発射数を +2", apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); } },
+    { id: "multi", minWave: 5, title: "拡散ショット", desc: "弾の同時発射数を +2", apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); } },
     { id: "rapid", title: "超連射エンジン", desc: "弾の発射間隔を短縮", apply: () => { player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78)); } },
     { id: "power", title: "高威力プラズマ", desc: "弾の攻撃力 +1", apply: () => { player.bulletDamage += 1; } },
     { id: "heal", title: "ナノリペア", desc: "最大HP +1 ＆ 全回復", apply: () => { player.maxHp += 1; player.hp = player.maxHp; } },
@@ -159,7 +159,8 @@
   ];
 
   function generateChoices() {
-    const shuffled = [...upgradePool].sort(() => Math.random() - 0.5);
+    const eligiblePool = upgradePool.filter((u) => !u.minWave || wave >= u.minWave);
+    const shuffled = [...eligiblePool].sort(() => Math.random() - 0.5);
     choices = shuffled.slice(0, 3);
   }
 
