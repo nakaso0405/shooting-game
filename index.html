@@ -142,7 +142,7 @@
     confirmReset = false;
   }
 
-  // ゲーム状態: "menu", "playing", "choosing", "gameover", "victory"
+  // ゲーム状態: "menu", "playing", "paused", "choosing", "gameover", "victory"
   let gameState = "menu";
   let confirmReset = false;
   let score = 0;
@@ -176,8 +176,8 @@
     touchId: null,
     originX: 0,
     originY: 0,
-    deadZone: 3,    // ごくわずかな指のブレだけ無視してすぐ反応
-    maxRadius: 34,  // 少し短めにして最大移動まで素早く到達
+    deadZone: 3,
+    maxRadius: 34,
     dx: 0,
     dy: 0
   };
@@ -223,7 +223,6 @@
     const effectiveRadius = Math.max(1, stickInput.maxRadius - stickInput.deadZone);
     const clampedDist = Math.min(dist - stickInput.deadZone, effectiveRadius);
     const normalized = clampedDist / effectiveRadius;
-    // 傾き始めもキビキビ動けるよう少しだけ反応を強める
     const curved = Math.pow(normalized, 0.85);
     const dirX = diffX / dist;
     const dirY = diffY / dist;
@@ -239,7 +238,7 @@
 
     if (player.x < 0) player.x = 0;
     if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
-    if (player.y < 52) player.y = 52;
+    if (player.y < 56) player.y = 56;
     if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
   }
 
@@ -255,7 +254,7 @@
     { id: "power", rarity: "normal", title: "高威力プラズマ", desc: "弾の攻撃力 +1", apply: () => { player.bulletDamage += 1; } },
     { id: "heal", rarity: "normal", title: "ナノリペア", desc: "最大HP +1 ＆ 全回復", apply: () => { player.maxHp += 1; player.hp = player.maxHp; } },
     { id: "speed", rarity: "normal", title: "高速弾丸", desc: "弾のスピードUP", apply: () => { player.bulletSpeed += 2.5; } },
-    { id: "moveSpeed", rarity: "normal", title: "ブースターアクセル", desc: "自機の移動速度UP", apply: () => { player.speed = Math.min(9.5, Number((player.speed + 0.9).toFixed(1))); } },
+    { id: "moveSpeed", rarity: "normal", title: "ブースターアクセル", desc: "自機の移動速度大幅UP (+1.4)", apply: () => { player.speed = Math.min(11.5, Number((player.speed + 1.4).toFixed(1))); } },
     { id: "bulletSize", rarity: "normal", title: "ビッグバレット", desc: "弾のサイズUP", apply: () => {
       player.bulletWidth = Math.min(24, player.bulletWidth + 3);
       player.bulletHeight = Math.min(34, player.bulletHeight + 4);
@@ -267,7 +266,7 @@
       title: "★ ハイパーブリッツ",
       desc: "移動速度大幅UP＆巨大弾化",
       apply: () => {
-        player.speed = Math.min(10.0, Number((player.speed + 1.5).toFixed(1)));
+        player.speed = Math.min(12.0, Number((player.speed + 1.8).toFixed(1)));
         player.bulletWidth = Math.min(24, player.bulletWidth + 5);
         player.bulletHeight = Math.min(34, player.bulletHeight + 6);
       }
@@ -357,6 +356,42 @@
     };
   }
 
+  function getPauseButtonRect() {
+    return {
+      x: canvas.width - 84,
+      y: 32,
+      width: 72,
+      height: 24
+    };
+  }
+
+  function getResumeButtonRect() {
+    return {
+      x: (canvas.width - 210) / 2,
+      y: 220,
+      width: 210,
+      height: 44
+    };
+  }
+
+  function getPauseMuteButtonRect() {
+    return {
+      x: (canvas.width - 210) / 2,
+      y: 278,
+      width: 210,
+      height: 44
+    };
+  }
+
+  function getPauseMenuButtonRect() {
+    return {
+      x: (canvas.width - 210) / 2,
+      y: 336,
+      width: 210,
+      height: 44
+    };
+  }
+
   function getBackToMenuButtonRect() {
     return {
       x: (canvas.width - 210) / 2,
@@ -435,6 +470,17 @@
     syncBgmPlayback();
   }
 
+  function pauseGame() {
+    clearStickInput();
+    gameState = "paused";
+  }
+
+  function resumeGame() {
+    clearStickInput();
+    gameState = "playing";
+    syncBgmPlayback();
+  }
+
   function returnToMenu() {
     confirmReset = false;
     resetGameStats();
@@ -481,6 +527,17 @@
       return;
     }
 
+    if (gameState === "paused") {
+      if (isPointInRect(x, y, getResumeButtonRect())) {
+        resumeGame();
+      } else if (isPointInRect(x, y, getPauseMuteButtonRect())) {
+        toggleMute();
+      } else if (isPointInRect(x, y, getPauseMenuButtonRect())) {
+        returnToMenu();
+      }
+      return;
+    }
+
     if (gameState === "gameover" || gameState === "victory") {
       if (isPointInRect(x, y, getBackToMenuButtonRect())) {
         returnToMenu();
@@ -521,8 +578,13 @@
 
     if (gameState === "playing") {
       ensureBgmPlaying();
+      const t = e.changedTouches[0];
+      const pos = getCanvasCoords(t.clientX, t.clientY);
+      if (isPointInRect(pos.x, pos.y, getPauseButtonRect())) {
+        pauseGame();
+        return;
+      }
       if (!stickInput.active) {
-        const t = e.changedTouches[0];
         beginStickInput(t.clientX, t.clientY, t.identifier);
       }
     } else {
@@ -561,6 +623,11 @@
   canvas.addEventListener("mousedown", (e) => {
     if (gameState === "playing") {
       ensureBgmPlaying();
+      const pos = getCanvasCoords(e.clientX, e.clientY);
+      if (isPointInRect(pos.x, pos.y, getPauseButtonRect())) {
+        pauseGame();
+        return;
+      }
       isMouseDown = true;
       beginStickInput(e.clientX, e.clientY, "mouse");
     } else {
@@ -981,6 +1048,81 @@
     }
   }
 
+  function drawHudAndPauseButton() {
+    ctx.fillStyle = "white";
+    ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "left";
+    if (wave === 5) {
+      ctx.fillStyle = "#c77dff";
+      ctx.fillText("WAVE 5 - MID-BOSS", 12, 24);
+      ctx.fillStyle = "white";
+    } else if (wave === 10) {
+      ctx.fillStyle = "#ff5577";
+      ctx.fillText("WAVE 10 - FINAL BOSS", 12, 24);
+      ctx.fillStyle = "white";
+    } else {
+      ctx.fillText("WAVE " + wave + " (" + killsInWave + "/" + killsToNextWave + ")", 12, 24);
+    }
+    ctx.fillText("SCORE: " + score, 12, 44);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#ff6688";
+    ctx.fillText("HP: " + "♥".repeat(player.hp) + "♡".repeat(Math.max(0, player.maxHp - player.hp)), canvas.width - 12, 24);
+
+    const pauseBtn = getPauseButtonRect();
+    ctx.fillStyle = "#162232";
+    ctx.strokeStyle = "#00ffcc";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(pauseBtn.x, pauseBtn.y, pauseBtn.width, pauseBtn.height);
+    ctx.strokeRect(pauseBtn.x, pauseBtn.y, pauseBtn.width, pauseBtn.height);
+
+    ctx.fillStyle = "#00ffcc";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("|| 一時停止", pauseBtn.x + pauseBtn.width / 2, pauseBtn.y + 16);
+  }
+
+  function drawPausedScreen() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.84)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#00ffcc";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("PAUSED", canvas.width / 2, 165);
+
+    ctx.fillStyle = "#cccccc";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("WAVE " + wave + "  |  SCORE: " + score, canvas.width / 2, 195);
+
+    const resumeBtn = getResumeButtonRect();
+    ctx.fillStyle = "#00ffcc";
+    ctx.fillRect(resumeBtn.x, resumeBtn.y, resumeBtn.width, resumeBtn.height);
+    ctx.fillStyle = "#05050a";
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText("ゲームに戻る", canvas.width / 2, resumeBtn.y + 28);
+
+    const muteBtn = getPauseMuteButtonRect();
+    ctx.fillStyle = isMuted ? "#261829" : "#12242b";
+    ctx.strokeStyle = isMuted ? "#ff7799" : "#00ffcc";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
+    ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
+    ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText(isMuted ? "BGM: オフ（タップでオン）" : "BGM: オン（タップでオフ）", canvas.width / 2, muteBtn.y + 27);
+
+    const menuBtn = getPauseMenuButtonRect();
+    ctx.fillStyle = "#162032";
+    ctx.strokeStyle = "#ffd700";
+    ctx.lineWidth = 2;
+    ctx.fillRect(menuBtn.x, menuBtn.y, menuBtn.width, menuBtn.height);
+    ctx.strokeRect(menuBtn.x, menuBtn.y, menuBtn.width, menuBtn.height);
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText("メニューに戻る", canvas.width / 2, menuBtn.y + 28);
+  }
+
   function drawMenuScreen() {
     ctx.fillStyle = "#05050a";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1161,11 +1303,50 @@
     drawBackToMenuButton("#ffd700", "#ffd700");
   }
 
+  function drawPlayingScene() {
+    if (player.invincibleTimer === 0 || Math.floor(player.invincibleTimer / 4) % 2 === 0) {
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.moveTo(player.x + player.width / 2, player.y);
+      ctx.lineTo(player.x, player.y + player.height);
+      ctx.lineTo(player.x + player.width, player.y + player.height);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "#ffff00";
+    for (let i = 0; i < bullets.length; i++) {
+      const b = bullets[i];
+      ctx.fillRect(b.x, b.y, b.width, b.height);
+    }
+
+    if (wave === 5 || wave === 10) {
+      if (boss) {
+        drawEnemyIllustration(boss);
+      }
+    } else {
+      for (let i = 0; i < enemies.length; i++) {
+        drawEnemyIllustration(enemies[i]);
+      }
+    }
+
+    ctx.fillStyle = "#ff55aa";
+    for (let i = 0; i < enemyBullets.length; i++) {
+      const eb = enemyBullets[i];
+      ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
+    }
+
+    drawHudAndPauseButton();
+  }
+
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (gameState === "menu") {
       drawMenuScreen();
+    } else if (gameState === "paused") {
+      drawPlayingScene();
+      drawPausedScreen();
     } else if (gameState === "playing") {
       frameCount++;
       if (player.invincibleTimer > 0) player.invincibleTimer--;
@@ -1269,25 +1450,7 @@
         }
       }
 
-      ctx.fillStyle = "white";
-      ctx.font = "bold 15px sans-serif";
-      ctx.textAlign = "left";
-      if (wave === 5) {
-        ctx.fillStyle = "#c77dff";
-        ctx.fillText("WAVE 5 - MID-BOSS", 12, 24);
-        ctx.fillStyle = "white";
-      } else if (wave === 10) {
-        ctx.fillStyle = "#ff5577";
-        ctx.fillText("WAVE 10 - FINAL BOSS", 12, 24);
-        ctx.fillStyle = "white";
-      } else {
-        ctx.fillText("WAVE " + wave + " (" + killsInWave + "/" + killsToNextWave + ")", 12, 24);
-      }
-      ctx.fillText("SCORE: " + score, 12, 44);
-
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#ff6688";
-      ctx.fillText("HP: " + "♥".repeat(player.hp) + "♡".repeat(Math.max(0, player.maxHp - player.hp)), canvas.width - 12, 24);
+      drawHudAndPauseButton();
     } else if (gameState === "choosing") {
       drawChoosingScreen();
     } else if (gameState === "gameover") {
