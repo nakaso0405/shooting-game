@@ -42,7 +42,7 @@
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
 
-  // BGM設定（ファイル名に合わせて ./bgm.mp3 を変更してください）
+  // BGM設定
   const bgm = new Audio("./bgm.mp3");
   bgm.loop = true;
   bgm.volume = 0.45;
@@ -145,24 +145,22 @@
     color: "#00ffcc"
   };
 
-  // 仮想ジョイスティック状態（表示はオフ）
-  const joystick = {
+  // 仮想スティック入力処理（画面表示なし）
+  const stickInput = {
     active: false,
     touchId: null,
-    baseX: 0,
-    baseY: 0,
-    stickX: 0,
-    stickY: 0,
+    originX: 0,
+    originY: 0,
     maxRadius: 42,
-    dx: 0, // -1.0 〜 1.0
-    dy: 0  // -1.0 〜 1.0
+    dx: 0,
+    dy: 0
   };
 
-  function resetJoystick() {
-    joystick.active = false;
-    joystick.touchId = null;
-    joystick.dx = 0;
-    joystick.dy = 0;
+  function clearStickInput() {
+    stickInput.active = false;
+    stickInput.touchId = null;
+    stickInput.dx = 0;
+    stickInput.dy = 0;
   }
 
   function getCanvasCoords(clientX, clientY) {
@@ -173,54 +171,43 @@
     };
   }
 
-  function startJoystickAt(clientX, clientY, touchId = null) {
+  function beginStickInput(clientX, clientY, touchId = null) {
     const pos = getCanvasCoords(clientX, clientY);
-    joystick.active = true;
-    joystick.touchId = touchId;
-    joystick.baseX = pos.x;
-    joystick.baseY = pos.y;
-    joystick.stickX = pos.x;
-    joystick.stickY = pos.y;
-    joystick.dx = 0;
-    joystick.dy = 0;
+    stickInput.active = true;
+    stickInput.touchId = touchId;
+    stickInput.originX = pos.x;
+    stickInput.originY = pos.y;
+    stickInput.dx = 0;
+    stickInput.dy = 0;
   }
 
-  function updateJoystickMove(clientX, clientY) {
-    if (!joystick.active) return;
+  function moveStickInput(clientX, clientY) {
+    if (!stickInput.active) return;
     const pos = getCanvasCoords(clientX, clientY);
-    const diffX = pos.x - joystick.baseX;
-    const diffY = pos.y - joystick.baseY;
+    const diffX = pos.x - stickInput.originX;
+    const diffY = pos.y - stickInput.originY;
     const dist = Math.hypot(diffX, diffY);
 
     if (dist > 0) {
-      const clampedDist = Math.min(dist, joystick.maxRadius);
+      const clampedDist = Math.min(dist, stickInput.maxRadius);
       const ratio = clampedDist / dist;
-      joystick.stickX = joystick.baseX + diffX * ratio;
-      joystick.stickY = joystick.baseY + diffY * ratio;
-      joystick.dx = (diffX * ratio) / joystick.maxRadius;
-      joystick.dy = (diffY * ratio) / joystick.maxRadius;
+      stickInput.dx = (diffX * ratio) / stickInput.maxRadius;
+      stickInput.dy = (diffY * ratio) / stickInput.maxRadius;
     } else {
-      joystick.stickX = joystick.baseX;
-      joystick.stickY = joystick.baseY;
-      joystick.dx = 0;
-      joystick.dy = 0;
+      stickInput.dx = 0;
+      stickInput.dy = 0;
     }
   }
 
   function updatePlayerMovement() {
-    if (!joystick.active) return;
-    player.x += joystick.dx * player.speed;
-    player.y += joystick.dy * player.speed;
+    if (!stickInput.active) return;
+    player.x += stickInput.dx * player.speed;
+    player.y += stickInput.dy * player.speed;
 
     if (player.x < 0) player.x = 0;
     if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
     if (player.y < 52) player.y = 52;
     if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
-  }
-
-  function drawVirtualJoystick() {
-    // 仮想ジョイスティックの表示は非表示に設定済み
-    return;
   }
 
   let bullets = [];
@@ -350,7 +337,7 @@
   }
 
   function resetGameStats() {
-    resetJoystick();
+    clearStickInput();
     score = 0;
     wave = 1;
     killsInWave = 0;
@@ -387,13 +374,13 @@
   }
 
   function triggerGameOver() {
-    resetJoystick();
+    clearStickInput();
     saveHighScoreIfNeeded();
     gameState = "gameover";
   }
 
   function triggerVictory() {
-    resetJoystick();
+    clearStickInput();
     saveHighScoreIfNeeded();
     gameState = "victory";
   }
@@ -443,7 +430,7 @@
           enemies = [];
           enemyBullets = [];
           boss = null;
-          resetJoystick();
+          clearStickInput();
           player.invincibleTimer = 60;
           gameState = "playing";
 
@@ -464,9 +451,9 @@
 
     if (gameState === "playing") {
       ensureBgmPlaying();
-      if (!joystick.active) {
+      if (!stickInput.active) {
         const t = e.changedTouches[0];
-        startJoystickAt(t.clientX, t.clientY, t.identifier);
+        beginStickInput(t.clientX, t.clientY, t.identifier);
       }
     } else {
       const t = e.changedTouches[0];
@@ -476,11 +463,11 @@
 
   canvas.addEventListener("touchmove", (e) => {
     e.preventDefault();
-    if (gameState !== "playing" || !joystick.active) return;
+    if (gameState !== "playing" || !stickInput.active) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
-      if (t.identifier === joystick.touchId) {
-        updateJoystickMove(t.clientX, t.clientY);
+      if (t.identifier === stickInput.touchId) {
+        moveStickInput(t.clientX, t.clientY);
         break;
       }
     }
@@ -488,10 +475,10 @@
 
   function handleTouchEndOrCancel(e) {
     e.preventDefault();
-    if (!joystick.active) return;
+    if (!stickInput.active) return;
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === joystick.touchId) {
-        resetJoystick();
+      if (e.changedTouches[i].identifier === stickInput.touchId) {
+        clearStickInput();
         break;
       }
     }
@@ -500,13 +487,12 @@
   canvas.addEventListener("touchend", handleTouchEndOrCancel, { passive: false });
   canvas.addEventListener("touchcancel", handleTouchEndOrCancel, { passive: false });
 
-  // PCでのマウス操作も仮想ジョイスティックに対応
   let isMouseDown = false;
   canvas.addEventListener("mousedown", (e) => {
     if (gameState === "playing") {
       ensureBgmPlaying();
       isMouseDown = true;
-      startJoystickAt(e.clientX, e.clientY, "mouse");
+      beginStickInput(e.clientX, e.clientY, "mouse");
     } else {
       handleTap(e.clientX, e.clientY);
     }
@@ -514,14 +500,14 @@
 
   window.addEventListener("mousemove", (e) => {
     if (isMouseDown && gameState === "playing") {
-      updateJoystickMove(e.clientX, e.clientY);
+      moveStickInput(e.clientX, e.clientY);
     }
   });
 
   window.addEventListener("mouseup", () => {
     if (isMouseDown) {
       isMouseDown = false;
-      resetJoystick();
+      clearStickInput();
     }
   });
 
@@ -898,7 +884,7 @@
             score += 1000;
             boss = null;
             enemyBullets = [];
-            resetJoystick();
+            clearStickInput();
             generateChoices();
             gameState = "choosing";
             return;
@@ -1175,7 +1161,7 @@
           }
           if (destroyed) {
             if (killsInWave >= killsToNextWave) {
-              resetJoystick();
+              clearStickInput();
               generateChoices();
               gameState = "choosing";
               break;
@@ -1211,8 +1197,6 @@
           enemyBullets.splice(i, 1);
         }
       }
-
-      drawVirtualJoystick();
 
       ctx.fillStyle = "white";
       ctx.font = "bold 15px sans-serif";
