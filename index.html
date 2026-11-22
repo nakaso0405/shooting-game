@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>シンプル・シューティング</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>スマホ・シューティング</title>
 <style>
   body {
     background-color: #111;
@@ -13,12 +14,15 @@
     justify-content: center;
     height: 100vh;
     margin: 0;
+    overflow: hidden; /* 画面のスクロールを防止 */
+    touch-action: none; /* スマホの引っ張り更新などを防止 */
     font-family: sans-serif;
   }
   canvas {
     background-color: #000;
     border: 2px solid #00ffcc;
-    box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+    max-width: 95vw;
+    max-height: 80vh;
   }
   p {
     margin-top: 10px;
@@ -29,76 +33,86 @@
 </head>
 <body>
 
-  <canvas id="gameCanvas" width="400" height="600"></canvas>
-  <p>操作方法：【←】【→】キーで移動 ／ 【スペース】キーで弾を撃つ ／ 【Enter】でリスタート</p>
+  <canvas id="gameCanvas" width="360" height="540"></canvas>
+  <p>画面を指で左右に動かして操作（弾は自動発射）</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
 
-  // ゲームの状態
   let score = 0;
   let isGameOver = false;
+  let frameCount = 0;
 
-  // プレイヤー（自機）の設定
   const player = {
     x: canvas.width / 2 - 20,
     y: canvas.height - 60,
     width: 40,
     height: 40,
-    speed: 5,
     color: "#00ffcc"
   };
 
-  // 弾と敵のリスト
   let bullets = [];
   let enemies = [];
 
-  // キー入力の記録
-  const keys = {};
-  window.addEventListener("keydown", (e) => {
-    keys[e.code] = true;
-    // スペースキーで弾を撃つ
-    if (e.code === "Space" && !isGameOver) {
-      bullets.push({
-        x: player.x + player.width / 2 - 3,
-        y: player.y,
-        width: 6,
-        height: 15,
-        speed: 8
-      });
-    }
-    // Enterキーでリスタート
-    if (e.code === "Enter" && isGameOver) {
-      resetGame();
-    }
-  });
-  window.addEventListener("keyup", (e) => keys[e.code] = false);
+  // スマホのタッチ操作（指の位置に合わせて自機を移動）
+  function movePlayer(clientX) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const touchX = (clientX - rect.left) * scaleX;
+    player.x = touchX - player.width / 2;
 
-  // ゲームのリセット
+    // 画面の外に出ないように制限
+    if (player.x < 0) player.x = 0;
+    if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+  }
+
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (!isGameOver && e.touches.length > 0) {
+      movePlayer(e.touches[0].clientX);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (isGameOver) {
+      resetGame();
+    } else if (e.touches.length > 0) {
+      movePlayer(e.touches[0].clientX);
+    }
+  }, { passive: false });
+
+  // パソコンのマウスでもテストできるように対応
+  canvas.addEventListener("mousemove", (e) => {
+    if (!isGameOver) movePlayer(e.clientX);
+  });
+  canvas.addEventListener("click", () => {
+    if (isGameOver) resetGame();
+  });
+
   function resetGame() {
     score = 0;
     isGameOver = false;
+    frameCount = 0;
     player.x = canvas.width / 2 - 20;
     bullets = [];
     enemies = [];
     loop();
   }
 
-  // 敵をランダムに発生させる
   function spawnEnemy() {
-    if (Math.random() < 0.03) { // 出現率
+    if (Math.random() < 0.035) {
       enemies.push({
         x: Math.random() * (canvas.width - 35),
         y: -35,
         width: 35,
         height: 35,
-        speed: 2 + Math.random() * 2 // 速度もランダム
+        speed: 2.5 + Math.random() * 2.5
       });
     }
   }
 
-  // 当たり判定の計算
   function isColliding(a, b) {
     return a.x < b.x + b.width &&
            a.x + a.width > b.x &&
@@ -106,31 +120,37 @@
            a.y + a.height > b.y;
   }
 
-  // 画面の更新と描画（ゲームのメインループ）
   function loop() {
     if (isGameOver) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "#ff4444";
-      ctx.font = "bold 36px sans-serif";
+      ctx.font = "bold 32px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
       ctx.fillStyle = "white";
       ctx.font = "20px sans-serif";
       ctx.fillText("Score: " + score, canvas.width / 2, canvas.height / 2 + 20);
       ctx.font = "16px sans-serif";
-      ctx.fillText("Enterキーで再挑戦", canvas.width / 2, canvas.height / 2 + 60);
+      ctx.fillText("画面をタップして再挑戦", canvas.width / 2, canvas.height / 2 + 60);
       return;
     }
 
-    // 画面を一度クリア
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    frameCount++;
 
-    // プレイヤーの移動
-    if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
-    if (keys["ArrowRight"] && player.x < canvas.width - player.width) player.x += player.speed;
+    // 15フレームごとに自動で弾を発射
+    if (frameCount % 15 === 0) {
+      bullets.push({
+        x: player.x + player.width / 2 - 3,
+        y: player.y,
+        width: 6,
+        height: 15,
+        speed: 9
+      });
+    }
 
-    // プレイヤーの描画（三角形の宇宙船風）
+    // プレイヤー描画
     ctx.fillStyle = player.color;
     ctx.beginPath();
     ctx.moveTo(player.x + player.width / 2, player.y);
@@ -139,16 +159,16 @@
     ctx.closePath();
     ctx.fill();
 
-    // 弾の移動と描画
+    // 弾の更新と描画
     ctx.fillStyle = "#ffff00";
     for (let i = bullets.length - 1; i >= 0; i--) {
       let b = bullets[i];
       b.y -= b.speed;
       ctx.fillRect(b.x, b.y, b.width, b.height);
-      if (b.y < 0) bullets.splice(i, 1); // 画面外に出たら消す
+      if (b.y < 0) bullets.splice(i, 1);
     }
 
-    // 敵の生成・移動・描画
+    // 敵の更新と描画
     spawnEnemy();
     ctx.fillStyle = "#ff4466";
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -156,12 +176,10 @@
       e.y += e.speed;
       ctx.fillRect(e.x, e.y, e.width, e.height);
 
-      // プレイヤーと敵がぶつかったらゲームオーバー
       if (isColliding(player, e)) {
         isGameOver = true;
       }
 
-      // 弾と敵の当たり判定
       for (let j = bullets.length - 1; j >= 0; j--) {
         if (isColliding(bullets[j], e)) {
           enemies.splice(i, 1);
@@ -171,7 +189,6 @@
         }
       }
 
-      // 画面下まで行ったら消す
       if (e && e.y > canvas.height) enemies.splice(i, 1);
     }
 
@@ -181,11 +198,9 @@
     ctx.textAlign = "left";
     ctx.fillText("SCORE: " + score, 15, 30);
 
-    // 次のフレームを予約（1秒間に約60回繰り返す）
     requestAnimationFrame(loop);
   }
 
-  // ゲーム開始
   loop();
 </script>
 </body>
