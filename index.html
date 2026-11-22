@@ -42,6 +42,28 @@
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
 
+  // BGM設定（ファイル名に合わせて ./bgm.mp3 を変更してください）
+  const bgm = new Audio("./bgm.mp3");
+  bgm.loop = true;
+  bgm.volume = 0.45;
+  let isMuted = false;
+
+  function ensureBgmPlaying() {
+    if (isMuted) return;
+    bgm.muted = false;
+    if (bgm.paused) {
+      bgm.play().catch(() => {});
+    }
+  }
+
+  function toggleMute() {
+    isMuted = !isMuted;
+    bgm.muted = isMuted;
+    if (!isMuted) {
+      bgm.play().catch(() => {});
+    }
+  }
+
   // 外部画像（ドット絵PNG）の読み込み設定
   const enemySprites = {
     normal: new Image(),
@@ -89,8 +111,17 @@
     }
   }
 
+  function resetHighScore() {
+    highScore = 0;
+    try {
+      localStorage.removeItem(HIGH_SCORE_KEY);
+    } catch (e) {}
+    confirmReset = false;
+  }
+
   // ゲーム状態: "menu", "playing", "choosing", "gameover", "victory"
   let gameState = "menu";
+  let confirmReset = false;
   let score = 0;
   let highScore = loadHighScore();
   let wave = 1;
@@ -150,9 +181,45 @@
   function getStartButtonRect() {
     return {
       x: (canvas.width - 220) / 2,
-      y: 315,
+      y: 280,
       width: 220,
-      height: 54
+      height: 48
+    };
+  }
+
+  function getMuteButtonRect() {
+    return {
+      x: (canvas.width - 190) / 2,
+      y: 338,
+      width: 190,
+      height: 38
+    };
+  }
+
+  function getResetButtonRect() {
+    return {
+      x: (canvas.width - 190) / 2,
+      y: 386,
+      width: 190,
+      height: 38
+    };
+  }
+
+  function getConfirmYesButtonRect() {
+    return {
+      x: 42,
+      y: 386,
+      width: 130,
+      height: 40
+    };
+  }
+
+  function getConfirmNoButtonRect() {
+    return {
+      x: 188,
+      y: 386,
+      width: 130,
+      height: 40
     };
   }
 
@@ -223,13 +290,17 @@
   }
 
   function startNewGame() {
+    confirmReset = false;
     resetGameStats();
+    ensureBgmPlaying();
     gameState = "playing";
   }
 
   function returnToMenu() {
+    confirmReset = false;
     resetGameStats();
     highScore = loadHighScore();
+    ensureBgmPlaying();
     gameState = "menu";
   }
 
@@ -258,8 +329,24 @@
     const y = (clientY - rect.top) * (canvas.height / rect.height);
 
     if (gameState === "menu") {
+      if (confirmReset) {
+        if (isPointInRect(x, y, getConfirmYesButtonRect())) {
+          resetHighScore();
+        } else if (isPointInRect(x, y, getConfirmNoButtonRect())) {
+          confirmReset = false;
+        }
+        return;
+      }
+
       if (isPointInRect(x, y, getStartButtonRect())) {
         startNewGame();
+      } else if (isPointInRect(x, y, getMuteButtonRect())) {
+        toggleMute();
+      } else if (isPointInRect(x, y, getResetButtonRect())) {
+        ensureBgmPlaying();
+        confirmReset = true;
+      } else {
+        ensureBgmPlaying();
       }
       return;
     }
@@ -309,6 +396,7 @@
     if (e.touches.length > 0) {
       const t = e.touches[0];
       if (gameState === "playing") {
+        ensureBgmPlaying();
         movePlayer(t.clientX);
       } else {
         handleTap(t.clientX, t.clientY);
@@ -323,6 +411,8 @@
   canvas.addEventListener("click", (e) => {
     if (gameState !== "playing") {
       handleTap(e.clientX, e.clientY);
+    } else {
+      ensureBgmPlaying();
     }
   });
 
@@ -391,7 +481,6 @@
     }
   }
 
-  // 画像が読み込まれていればPNGを描画し、未読み込み時は従来の描画にフォールバック
   function drawEnemyIllustration(e) {
     if (drawSpriteIfReady(enemySprites[e.type], e.x, e.y, e.width, e.height)) {
       return;
@@ -733,37 +822,85 @@
     ctx.fillStyle = "#00ffcc";
     ctx.font = "bold 24px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("ROGUELIKE", canvas.width / 2, 115);
+    ctx.fillText("ROGUELIKE", canvas.width / 2, 102);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 28px sans-serif";
-    ctx.fillText("SHOOTING", canvas.width / 2, 150);
+    ctx.fillText("SHOOTING", canvas.width / 2, 137);
 
     ctx.fillStyle = "#111927";
     ctx.strokeStyle = "#ffd700";
     ctx.lineWidth = 2;
-    ctx.fillRect(55, 195, canvas.width - 110, 76);
-    ctx.strokeRect(55, 195, canvas.width - 110, 76);
+    ctx.fillRect(55, 176, canvas.width - 110, 76);
+    ctx.strokeRect(55, 176, canvas.width - 110, 76);
 
     ctx.fillStyle = "#ffd700";
     ctx.font = "bold 14px sans-serif";
-    ctx.fillText("HIGH SCORE", canvas.width / 2, 222);
+    ctx.fillText("HIGH SCORE", canvas.width / 2, 203);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 24px sans-serif";
-    ctx.fillText(String(highScore), canvas.width / 2, 254);
+    ctx.fillText(String(highScore), canvas.width / 2, 235);
 
     const startBtn = getStartButtonRect();
     ctx.fillStyle = "#00ffcc";
     ctx.fillRect(startBtn.x, startBtn.y, startBtn.width, startBtn.height);
 
     ctx.fillStyle = "#05050a";
-    ctx.font = "bold 20px sans-serif";
-    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 34);
+    ctx.font = "bold 19px sans-serif";
+    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 31);
+
+    const muteBtn = getMuteButtonRect();
+    ctx.fillStyle = isMuted ? "#261829" : "#12242b";
+    ctx.strokeStyle = isMuted ? "#ff7799" : "#00ffcc";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
+    ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
+
+    ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 24);
+
+    if (confirmReset) {
+      ctx.fillStyle = "#ff8899";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText("ハイスコアを 0 にリセットしますか？", canvas.width / 2, 376);
+
+      const yesBtn = getConfirmYesButtonRect();
+      ctx.fillStyle = "#3a1420";
+      ctx.strokeStyle = "#ff5577";
+      ctx.lineWidth = 2;
+      ctx.fillRect(yesBtn.x, yesBtn.y, yesBtn.width, yesBtn.height);
+      ctx.strokeRect(yesBtn.x, yesBtn.y, yesBtn.width, yesBtn.height);
+      ctx.fillStyle = "#ff7799";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("リセットする", yesBtn.x + yesBtn.width / 2, yesBtn.y + 25);
+
+      const noBtn = getConfirmNoButtonRect();
+      ctx.fillStyle = "#162032";
+      ctx.strokeStyle = "#8899aa";
+      ctx.lineWidth = 2;
+      ctx.fillRect(noBtn.x, noBtn.y, noBtn.width, noBtn.height);
+      ctx.strokeRect(noBtn.x, noBtn.y, noBtn.width, noBtn.height);
+      ctx.fillStyle = "#e0e8f0";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("キャンセル", noBtn.x + noBtn.width / 2, noBtn.y + 25);
+    } else {
+      const resetBtn = getResetButtonRect();
+      ctx.fillStyle = "#1a1423";
+      ctx.strokeStyle = "#ff6688";
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
+      ctx.strokeRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
+
+      ctx.fillStyle = "#ff88a2";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 24);
+    }
 
     ctx.fillStyle = "#8899aa";
     ctx.font = "13px sans-serif";
-    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 415);
+    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 452);
   }
 
   function drawBackToMenuButton(borderColor, textColor) {
