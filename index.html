@@ -41,6 +41,7 @@
   const ctx = canvas.getContext("2d");
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
+  const PLAYER_INVINCIBLE_DURATION = 90; // 約1.5秒（60fps換算）
 
   // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
   const menuBgm = new Audio("./menu_bgm.mp3");
@@ -173,70 +174,109 @@
     color: "#00ffcc"
   };
 
+  // イラストの中心胴体（コア）に合わせた少し小さめの当たり判定
+  function getPlayerHitbox() {
+    const hitW = Math.round(player.width * 0.6);
+    const hitH = Math.round(player.height * 0.65);
+    return {
+      x: player.x + (player.width - hitW) / 2,
+      y: player.y + (player.height - hitH) / 2 + 2,
+      width: hitW,
+      height: hitH
+    };
+  }
+
+  function damagePlayer() {
+    if (player.invincibleTimer > 0) return false;
+    player.hp -= 1;
+    player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
+    if (player.hp <= 0) {
+      triggerGameOver();
+    }
+    return true;
+  }
+
   function drawPlayerIllustration() {
-    if (player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 4) % 2 !== 0) {
+    const isInvincible = player.invincibleTimer > 0;
+    if (isInvincible && Math.floor(player.invincibleTimer / 3) % 2 !== 0) {
       return;
     }
 
-    if (drawSpriteIfReady(playerSprite, player.x, player.y, player.width, player.height)) {
-      return;
+    ctx.save();
+    if (isInvincible) {
+      ctx.globalAlpha = 0.72;
     }
 
-    const cx = player.x + player.width / 2;
-    const flameFlicker = (frameCount % 4) * 2;
+    if (!drawSpriteIfReady(playerSprite, player.x, player.y, player.width, player.height)) {
+      const cx = player.x + player.width / 2;
+      const flameFlicker = (frameCount % 4) * 2;
 
-    // 推進ノズルの噴射炎
-    ctx.fillStyle = "#ff9100";
-    ctx.beginPath();
-    ctx.moveTo(cx - 7, player.y + player.height - 2);
-    ctx.lineTo(cx, player.y + player.height + 9 + flameFlicker);
-    ctx.lineTo(cx + 7, player.y + player.height - 2);
-    ctx.closePath();
-    ctx.fill();
+      // 推進ノズルの噴射炎
+      ctx.fillStyle = "#ff9100";
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, player.y + player.height - 2);
+      ctx.lineTo(cx, player.y + player.height + 9 + flameFlicker);
+      ctx.lineTo(cx + 7, player.y + player.height - 2);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.fillStyle = "#fff59d";
-    ctx.beginPath();
-    ctx.moveTo(cx - 3.5, player.y + player.height - 2);
-    ctx.lineTo(cx, player.y + player.height + 4 + Math.floor(flameFlicker / 2));
-    ctx.lineTo(cx + 3.5, player.y + player.height - 2);
-    ctx.closePath();
-    ctx.fill();
+      ctx.fillStyle = "#fff59d";
+      ctx.beginPath();
+      ctx.moveTo(cx - 3.5, player.y + player.height - 2);
+      ctx.lineTo(cx, player.y + player.height + 4 + Math.floor(flameFlicker / 2));
+      ctx.lineTo(cx + 3.5, player.y + player.height - 2);
+      ctx.closePath();
+      ctx.fill();
 
-    // 主翼・機体シルエット
-    ctx.fillStyle = "#00897b";
-    ctx.beginPath();
-    ctx.moveTo(cx, player.y + 8);
-    ctx.lineTo(player.x + player.width + 2, player.y + player.height - 4);
-    ctx.lineTo(cx + 9, player.y + player.height - 7);
-    ctx.lineTo(cx - 9, player.y + player.height - 7);
-    ctx.lineTo(player.x - 2, player.y + player.height - 4);
-    ctx.closePath();
-    ctx.fill();
+      // 主翼・機体シルエット
+      ctx.fillStyle = "#00897b";
+      ctx.beginPath();
+      ctx.moveTo(cx, player.y + 8);
+      ctx.lineTo(player.x + player.width + 2, player.y + player.height - 4);
+      ctx.lineTo(cx + 9, player.y + player.height - 7);
+      ctx.lineTo(cx - 9, player.y + player.height - 7);
+      ctx.lineTo(player.x - 2, player.y + player.height - 4);
+      ctx.closePath();
+      ctx.fill();
 
-    // メインボディ
-    ctx.fillStyle = player.color;
-    ctx.beginPath();
-    ctx.moveTo(cx, player.y);
-    ctx.lineTo(cx + 11, player.y + player.height - 6);
-    ctx.lineTo(cx, player.y + player.height - 10);
-    ctx.lineTo(cx - 11, player.y + player.height - 6);
-    ctx.closePath();
-    ctx.fill();
+      // メインボディ
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.moveTo(cx, player.y);
+      ctx.lineTo(cx + 11, player.y + player.height - 6);
+      ctx.lineTo(cx, player.y + player.height - 10);
+      ctx.lineTo(cx - 11, player.y + player.height - 6);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.strokeStyle = "#b2fff2";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+      ctx.strokeStyle = "#b2fff2";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
 
-    // コックピット（キャノピー）
-    ctx.fillStyle = "#1a237e";
-    ctx.beginPath();
-    ctx.ellipse(cx, player.y + 18, 4.2, 7.5, 0, 0, Math.PI * 2);
-    ctx.fill();
+      // コックピット（キャノピー）
+      ctx.fillStyle = "#1a237e";
+      ctx.beginPath();
+      ctx.ellipse(cx, player.y + 18, 4.2, 7.5, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = "#80d8ff";
-    ctx.beginPath();
-    ctx.ellipse(cx - 1, player.y + 15.5, 1.8, 3.2, -0.2, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.fillStyle = "#80d8ff";
+      ctx.beginPath();
+      ctx.ellipse(cx - 1, player.y + 15.5, 1.8, 3.2, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 無敵時間中のバリアリング表示
+    if (isInvincible) {
+      const cx = player.x + player.width / 2;
+      const cy = player.y + player.height / 2;
+      ctx.strokeStyle = "#80ffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 23, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 
   // 仮想スティック入力処理（画面表示なし・操作性調整済み）
@@ -627,7 +667,7 @@
           enemyBullets = [];
           boss = null;
           clearStickInput();
-          player.invincibleTimer = 60;
+          player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
           gameState = "playing";
 
           if (wave === 5) {
@@ -1108,12 +1148,9 @@
       }
     }
 
-    if (boss && player.invincibleTimer === 0 && isColliding(player, boss)) {
-      player.hp -= 1;
-      player.invincibleTimer = 60;
-      if (player.hp <= 0) {
-        triggerGameOver();
-      }
+    const playerHitbox = getPlayerHitbox();
+    if (boss && player.invincibleTimer === 0 && isColliding(playerHitbox, boss)) {
+      damagePlayer();
     }
   }
 
@@ -1435,16 +1472,14 @@
         updateAndDrawBoss();
       } else {
         spawnEnemy();
+        const playerHitbox = getPlayerHitbox();
         for (let i = enemies.length - 1; i >= 0; i--) {
           let e = enemies[i];
           updateAndDrawEnemy(e);
 
-          if (player.invincibleTimer === 0 && isColliding(player, e)) {
-            player.hp -= 1;
-            player.invincibleTimer = 60;
+          if (player.invincibleTimer === 0 && isColliding(playerHitbox, e)) {
             enemies.splice(i, 1);
-            if (player.hp <= 0) {
-              triggerGameOver();
+            if (damagePlayer()) {
               break;
             }
             continue;
@@ -1481,18 +1516,16 @@
       }
 
       ctx.fillStyle = "#ff55aa";
+      const playerHitboxForBullets = getPlayerHitbox();
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         let eb = enemyBullets[i];
         eb.x += eb.vx;
         eb.y += eb.vy;
         ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
 
-        if (player.invincibleTimer === 0 && isColliding(player, eb)) {
-          player.hp -= 1;
-          player.invincibleTimer = 60;
+        if (player.invincibleTimer === 0 && isColliding(playerHitboxForBullets, eb)) {
           enemyBullets.splice(i, 1);
-          if (player.hp <= 0) {
-            triggerGameOver();
+          if (damagePlayer()) {
             break;
           }
           continue;
