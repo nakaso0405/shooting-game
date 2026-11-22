@@ -42,26 +42,49 @@
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
 
-  // BGM設定
-  const bgm = new Audio("./bgm.mp3");
-  bgm.loop = true;
-  bgm.volume = 0.45;
+  // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
+  const menuBgm = new Audio("./menu_bgm.mp3");
+  menuBgm.loop = true;
+  menuBgm.volume = 0.45;
+
+  const gameBgm = new Audio("./bgm.mp3");
+  gameBgm.loop = true;
+  gameBgm.volume = 0.45;
+
   let isMuted = false;
 
-  function ensureBgmPlaying() {
-    if (isMuted) return;
-    bgm.muted = false;
-    if (bgm.paused) {
-      bgm.play().catch(() => {});
+  function getTargetBgm() {
+    return gameState === "menu" ? menuBgm : gameBgm;
+  }
+
+  function syncBgmPlayback() {
+    const target = getTargetBgm();
+    const other = target === menuBgm ? gameBgm : menuBgm;
+
+    if (!other.paused) {
+      other.pause();
     }
+
+    if (isMuted) {
+      target.muted = true;
+      return;
+    }
+
+    target.muted = false;
+    if (target.paused) {
+      target.play().catch(() => {});
+    }
+  }
+
+  function ensureBgmPlaying() {
+    syncBgmPlayback();
   }
 
   function toggleMute() {
     isMuted = !isMuted;
-    bgm.muted = isMuted;
-    if (!isMuted) {
-      bgm.play().catch(() => {});
-    }
+    menuBgm.muted = isMuted;
+    gameBgm.muted = isMuted;
+    syncBgmPlayback();
   }
 
   // 外部画像（ドット絵PNG）の読み込み設定
@@ -361,16 +384,16 @@
   function startNewGame() {
     confirmReset = false;
     resetGameStats();
-    ensureBgmPlaying();
     gameState = "playing";
+    syncBgmPlayback();
   }
 
   function returnToMenu() {
     confirmReset = false;
     resetGameStats();
     highScore = loadHighScore();
-    ensureBgmPlaying();
     gameState = "menu";
+    syncBgmPlayback();
   }
 
   function triggerGameOver() {
