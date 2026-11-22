@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>WAVE 5で中ボス、WAVE 10のラスボス（HP 1500）を倒してクリアを目指せ！</p>
+  <p>画面をタッチ＆スライド（仮想ジョイスティック）で上下左右に移動！</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -131,9 +131,10 @@
 
   const player = {
     x: canvas.width / 2 - 20,
-    y: canvas.height - 65,
+    y: canvas.height - 75,
     width: 40,
     height: 40,
+    speed: 4.8,
     hp: 3,
     maxHp: 3,
     invincibleTimer: 0,
@@ -143,6 +144,111 @@
     bulletDamage: 1,
     color: "#00ffcc"
   };
+
+  // 仮想ジョイスティック状態
+  const joystick = {
+    active: false,
+    touchId: null,
+    baseX: 0,
+    baseY: 0,
+    stickX: 0,
+    stickY: 0,
+    maxRadius: 42,
+    dx: 0, // -1.0 〜 1.0
+    dy: 0  // -1.0 〜 1.0
+  };
+
+  function resetJoystick() {
+    joystick.active = false;
+    joystick.touchId = null;
+    joystick.dx = 0;
+    joystick.dy = 0;
+  }
+
+  function getCanvasCoords(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height)
+    };
+  }
+
+  function startJoystickAt(clientX, clientY, touchId = null) {
+    const pos = getCanvasCoords(clientX, clientY);
+    joystick.active = true;
+    joystick.touchId = touchId;
+    joystick.baseX = pos.x;
+    joystick.baseY = pos.y;
+    joystick.stickX = pos.x;
+    joystick.stickY = pos.y;
+    joystick.dx = 0;
+    joystick.dy = 0;
+  }
+
+  function updateJoystickMove(clientX, clientY) {
+    if (!joystick.active) return;
+    const pos = getCanvasCoords(clientX, clientY);
+    const diffX = pos.x - joystick.baseX;
+    const diffY = pos.y - joystick.baseY;
+    const dist = Math.hypot(diffX, diffY);
+
+    if (dist > 0) {
+      const clampedDist = Math.min(dist, joystick.maxRadius);
+      const ratio = clampedDist / dist;
+      joystick.stickX = joystick.baseX + diffX * ratio;
+      joystick.stickY = joystick.baseY + diffY * ratio;
+      joystick.dx = (diffX * ratio) / joystick.maxRadius;
+      joystick.dy = (diffY * ratio) / joystick.maxRadius;
+    } else {
+      joystick.stickX = joystick.baseX;
+      joystick.stickY = joystick.baseY;
+      joystick.dx = 0;
+      joystick.dy = 0;
+    }
+  }
+
+  function updatePlayerMovement() {
+    if (!joystick.active) return;
+    player.x += joystick.dx * player.speed;
+    player.y += joystick.dy * player.speed;
+
+    if (player.x < 0) player.x = 0;
+    if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+    if (player.y < 52) player.y = 52;
+    if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
+  }
+
+  function drawVirtualJoystick() {
+    if (!joystick.active) return;
+
+    ctx.save();
+    // 外枠リング
+    ctx.beginPath();
+    ctx.arc(joystick.baseX, joystick.baseY, joystick.maxRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0, 255, 204, 0.12)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.45)";
+    ctx.stroke();
+
+    // 中心からスティックへのガイド線
+    ctx.beginPath();
+    ctx.moveTo(joystick.baseX, joystick.baseY);
+    ctx.lineTo(joystick.stickX, joystick.stickY);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.35)";
+    ctx.stroke();
+
+    // 内側のツマミ
+    ctx.beginPath();
+    ctx.arc(joystick.stickX, joystick.stickY, 18, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0, 255, 204, 0.5)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+    ctx.stroke();
+    ctx.restore();
+  }
 
   let bullets = [];
   let enemies = [];
@@ -271,6 +377,7 @@
   }
 
   function resetGameStats() {
+    resetJoystick();
     score = 0;
     wave = 1;
     killsInWave = 0;
@@ -285,6 +392,7 @@
     player.bulletSpeed = 9;
     player.bulletDamage = 1;
     player.x = canvas.width / 2 - 20;
+    player.y = canvas.height - 75;
     bullets = [];
     enemies = [];
     enemyBullets = [];
@@ -306,28 +414,19 @@
   }
 
   function triggerGameOver() {
+    resetJoystick();
     saveHighScoreIfNeeded();
     gameState = "gameover";
   }
 
   function triggerVictory() {
+    resetJoystick();
     saveHighScoreIfNeeded();
     gameState = "victory";
   }
 
-  function movePlayer(clientX) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const touchX = (clientX - rect.left) * scaleX;
-    player.x = touchX - player.width / 2;
-    if (player.x < 0) player.x = 0;
-    if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
-  }
-
   function handleTap(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const x = (clientX - rect.left) * (canvas.width / rect.width);
-    const y = (clientY - rect.top) * (canvas.height / rect.height);
+    const { x, y } = getCanvasCoords(clientX, clientY);
 
     if (gameState === "menu") {
       if (confirmReset) {
@@ -371,6 +470,7 @@
           enemies = [];
           enemyBullets = [];
           boss = null;
+          resetJoystick();
           player.invincibleTimer = 60;
           gameState = "playing";
 
@@ -385,35 +485,70 @@
     }
   }
 
-  canvas.addEventListener("touchmove", (e) => {
+  canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    if (gameState === "playing" && e.touches.length > 0) {
-      movePlayer(e.touches[0].clientX);
+    if (e.touches.length === 0) return;
+
+    if (gameState === "playing") {
+      ensureBgmPlaying();
+      if (!joystick.active) {
+        const t = e.changedTouches[0];
+        startJoystickAt(t.clientX, t.clientY, t.identifier);
+      }
+    } else {
+      const t = e.changedTouches[0];
+      handleTap(t.clientX, t.clientY);
     }
   }, { passive: false });
 
-  canvas.addEventListener("touchstart", (e) => {
+  canvas.addEventListener("touchmove", (e) => {
     e.preventDefault();
-    if (e.touches.length > 0) {
-      const t = e.touches[0];
-      if (gameState === "playing") {
-        ensureBgmPlaying();
-        movePlayer(t.clientX);
-      } else {
-        handleTap(t.clientX, t.clientY);
+    if (gameState !== "playing" || !joystick.active) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === joystick.touchId) {
+        updateJoystickMove(t.clientX, t.clientY);
+        break;
       }
     }
   }, { passive: false });
 
-  canvas.addEventListener("mousemove", (e) => {
-    if (gameState === "playing") movePlayer(e.clientX);
+  function handleTouchEndOrCancel(e) {
+    e.preventDefault();
+    if (!joystick.active) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === joystick.touchId) {
+        resetJoystick();
+        break;
+      }
+    }
+  }
+
+  canvas.addEventListener("touchend", handleTouchEndOrCancel, { passive: false });
+  canvas.addEventListener("touchcancel", handleTouchEndOrCancel, { passive: false });
+
+  // PCでのマウス操作も仮想ジョイスティックに対応
+  let isMouseDown = false;
+  canvas.addEventListener("mousedown", (e) => {
+    if (gameState === "playing") {
+      ensureBgmPlaying();
+      isMouseDown = true;
+      startJoystickAt(e.clientX, e.clientY, "mouse");
+    } else {
+      handleTap(e.clientX, e.clientY);
+    }
   });
 
-  canvas.addEventListener("click", (e) => {
-    if (gameState !== "playing") {
-      handleTap(e.clientX, e.clientY);
-    } else {
-      ensureBgmPlaying();
+  window.addEventListener("mousemove", (e) => {
+    if (isMouseDown && gameState === "playing") {
+      updateJoystickMove(e.clientX, e.clientY);
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isMouseDown) {
+      isMouseDown = false;
+      resetJoystick();
     }
   });
 
@@ -790,6 +925,7 @@
             score += 1000;
             boss = null;
             enemyBullets = [];
+            resetJoystick();
             generateChoices();
             gameState = "choosing";
             return;
@@ -1004,6 +1140,8 @@
       frameCount++;
       if (player.invincibleTimer > 0) player.invincibleTimer--;
 
+      updatePlayerMovement();
+
       if (frameCount % player.fireInterval === 0) {
         shootBullets();
       }
@@ -1064,6 +1202,7 @@
           }
           if (destroyed) {
             if (killsInWave >= killsToNextWave) {
+              resetJoystick();
               generateChoices();
               gameState = "choosing";
               break;
@@ -1099,6 +1238,9 @@
           enemyBullets.splice(i, 1);
         }
       }
+
+      // 仮想ジョイスティックを前面に半透明描画
+      drawVirtualJoystick();
 
       ctx.fillStyle = "white";
       ctx.font = "bold 15px sans-serif";
