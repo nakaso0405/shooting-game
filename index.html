@@ -42,7 +42,7 @@
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
   const PLAYER_INVINCIBLE_DURATION = 90; // 約1.5秒（60fps換算）
-  const BASE_PLAYER_SPEED = 4.2;
+  const BASE_PLAYER_SPEED = 2.2;
 
   // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
   const menuBgm = new Audio("./menu_bgm.mp3");
@@ -323,8 +323,8 @@
     dragInput.lastX = pos.x;
     dragInput.lastY = pos.y;
 
-    // 1px未満のわずかな指の震えは無視してピタッと止まりやすくする
-    if (Math.hypot(diffX, diffY) < 0.8) return;
+    // 1.0px未満のわずかな指の震えは無視してピタッと止まりやすくする
+    if (Math.hypot(diffX, diffY) < 1.0) return;
 
     dragInput.pendingDx += diffX;
     dragInput.pendingDy += diffY;
@@ -334,9 +334,9 @@
     if (!dragInput.active) return;
     if (dragInput.pendingDx === 0 && dragInput.pendingDy === 0) return;
 
-    // player.speed に応じた追従倍率（初期1.0倍、ブースター強化で機敏に）
-    const sensitivity = 0.92 * (player.speed / BASE_PLAYER_SPEED);
-    const maxStep = player.speed * 2.6;
+    // 落ち着いて狙いやすい控えめな追従感度と1フレーム上限
+    const sensitivity = 0.55 * (player.speed / BASE_PLAYER_SPEED);
+    const maxStep = player.speed * 1.65;
 
     const moveX = Math.max(-maxStep, Math.min(maxStep, dragInput.pendingDx * sensitivity));
     const moveY = Math.max(-maxStep, Math.min(maxStep, dragInput.pendingDy * sensitivity));
@@ -366,7 +366,7 @@
     { id: "power", rarity: "normal", title: "高威力プラズマ", desc: "弾の攻撃力 +1", apply: () => { player.bulletDamage += 1; } },
     { id: "heal", rarity: "normal", title: "ナノリペア", desc: "最大HP +1 ＆ 全回復", apply: () => { player.maxHp += 1; player.hp = player.maxHp; } },
     { id: "speed", rarity: "normal", title: "高速弾丸", desc: "弾のスピードUP", apply: () => { player.bulletSpeed += 2.5; } },
-    { id: "moveSpeed", rarity: "normal", title: "ブースターアクセル", desc: "自機の移動速度大幅UP (+1.4)", apply: () => { player.speed = Math.min(11.0, Number((player.speed + 1.4).toFixed(1))); } },
+    { id: "moveSpeed", rarity: "normal", title: "ブースターアクセル", desc: "自機の移動速度UP (+1.0)", apply: () => { player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1))); } },
     { id: "bulletSize", rarity: "normal", title: "ビッグバレット", desc: "弾のサイズUP", apply: () => {
       player.bulletWidth = Math.min(24, player.bulletWidth + 3);
       player.bulletHeight = Math.min(34, player.bulletHeight + 4);
@@ -376,9 +376,9 @@
       minWave: 3,
       rarity: "rare",
       title: "★ ハイパーブリッツ",
-      desc: "移動速度大幅UP＆巨大弾化",
+      desc: "移動速度UP＆巨大弾化",
       apply: () => {
-        player.speed = Math.min(11.5, Number((player.speed + 1.8).toFixed(1)));
+        player.speed = Math.min(8.0, Number((player.speed + 1.3).toFixed(1)));
         player.bulletWidth = Math.min(24, player.bulletWidth + 5);
         player.bulletHeight = Math.min(34, player.bulletHeight + 6);
       }
