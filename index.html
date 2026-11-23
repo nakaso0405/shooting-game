@@ -291,12 +291,13 @@
     };
   }
 
-  function damagePlayer() {
+  function damagePlayer(amount = 1) {
     if (player.invincibleTimer > 0) return false;
-    player.hp -= 1;
+    player.hp -= amount;
     player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
     spawnExplosion(player.x + player.width / 2, player.y + player.height / 2, "dash", 0.9);
     if (player.hp <= 0) {
+      player.hp = 0;
       triggerGameOver();
     }
     return true;
@@ -633,7 +634,7 @@
       height: 60,
       hp: 65,
       maxHp: 65,
-      vx: 2.6,
+      vx: 2.8,
       shootTimer: 0,
       patternCount: 0
     };
@@ -647,9 +648,9 @@
       y: 85,
       width: 128,
       height: 82,
-      hp: 1500,
-      maxHp: 1500,
-      vx: 3.1,
+      hp: 900,
+      maxHp: 900,
+      vx: 3.9,
       shootTimer: 0,
       patternCount: 0
     };
@@ -1077,14 +1078,25 @@
 
     boss.shootTimer++;
     if (boss.type === "mid") {
-      if (boss.shootTimer >= 65) {
+      // 中ボス：これまでのラスボスと同じ3way / 5way弾幕パターン
+      if (boss.shootTimer >= 42) {
         boss.shootTimer = 0;
-        const originX = cx - 4;
+        boss.patternCount++;
+        const originX = cx - 4.5;
         const originY = boss.y + boss.height;
-        const speeds = [
-          { vx: -1.1, vy: 4.2 },
-          { vx: 1.1, vy: 4.2 }
-        ];
+        const speeds = (boss.patternCount % 3 === 0)
+          ? [
+              { vx: -3.2, vy: 4.5 },
+              { vx: -1.6, vy: 5.2 },
+              { vx: 0, vy: 5.8 },
+              { vx: 1.6, vy: 5.2 },
+              { vx: 3.2, vy: 4.5 }
+            ]
+          : [
+              { vx: -2.0, vy: 5.0 },
+              { vx: 0, vy: 5.6 },
+              { vx: 2.0, vy: 5.0 }
+            ];
         for (const s of speeds) {
           enemyBullets.push({
             x: originX,
@@ -1092,7 +1104,9 @@
             width: 9,
             height: 9,
             vx: s.vx,
-            vy: s.vy
+            vy: s.vy,
+            damage: 1,
+            color: "#ff55aa"
           });
         }
       }
@@ -1137,32 +1151,35 @@
       ctx.textAlign = "center";
       ctx.fillText(boss.name + "  HP: " + Math.max(0, boss.hp) + " / " + boss.maxHp, canvas.width / 2, boss.y - 22);
     } else {
-      if (boss.shootTimer >= 42) {
+      // ラスボス：発射間隔を短縮し、弾速・威力ともに強化
+      if (boss.shootTimer >= 28) {
         boss.shootTimer = 0;
         boss.patternCount++;
-        const originX = cx - 5;
+        const originX = cx - 6;
         const originY = boss.y + boss.height;
         const speeds = (boss.patternCount % 3 === 0)
           ? [
-              { vx: -3.2, vy: 4.5 },
-              { vx: -1.6, vy: 5.2 },
-              { vx: 0, vy: 5.8 },
-              { vx: 1.6, vy: 5.2 },
-              { vx: 3.2, vy: 4.5 }
+              { vx: -4.2, vy: 6.2 },
+              { vx: -2.2, vy: 7.0 },
+              { vx: 0, vy: 7.8 },
+              { vx: 2.2, vy: 7.0 },
+              { vx: 4.2, vy: 6.2 }
             ]
           : [
-              { vx: -2.0, vy: 5.0 },
-              { vx: 0, vy: 5.6 },
-              { vx: 2.0, vy: 5.0 }
+              { vx: -2.8, vy: 6.8 },
+              { vx: 0, vy: 7.5 },
+              { vx: 2.8, vy: 6.8 }
             ];
         for (const s of speeds) {
           enemyBullets.push({
             x: originX,
             y: originY,
-            width: 10,
-            height: 10,
+            width: 12,
+            height: 12,
             vx: s.vx,
-            vy: s.vy
+            vy: s.vy,
+            damage: 2,
+            color: "#ff2a55"
           });
         }
       }
@@ -1266,7 +1283,7 @@
 
     const playerHitbox = getPlayerHitbox();
     if (boss && player.invincibleTimer === 0 && isColliding(playerHitbox, boss)) {
-      damagePlayer();
+      damagePlayer(boss.type === "final" ? 2 : 1);
     }
   }
 
@@ -1544,9 +1561,9 @@
       }
     }
 
-    ctx.fillStyle = "#ff55aa";
     for (let i = 0; i < enemyBullets.length; i++) {
       const eb = enemyBullets[i];
+      ctx.fillStyle = eb.color || "#ff55aa";
       ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
     }
 
@@ -1605,7 +1622,7 @@
           if (player.invincibleTimer === 0 && isColliding(playerHitbox, e)) {
             spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.3 : 1.0);
             enemies.splice(i, 1);
-            if (damagePlayer()) {
+            if (damagePlayer(1)) {
               break;
             }
             continue;
@@ -1642,17 +1659,18 @@
         }
       }
 
-      ctx.fillStyle = "#ff55aa";
       const playerHitboxForBullets = getPlayerHitbox();
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         let eb = enemyBullets[i];
         eb.x += eb.vx;
         eb.y += eb.vy;
+        ctx.fillStyle = eb.color || "#ff55aa";
         ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
 
         if (player.invincibleTimer === 0 && isColliding(playerHitboxForBullets, eb)) {
+          const hitDamage = eb.damage || 1;
           enemyBullets.splice(i, 1);
-          if (damagePlayer()) {
+          if (damagePlayer(hitDamage)) {
             break;
           }
           continue;
