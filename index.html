@@ -99,6 +99,7 @@
     dash: new Image(),
     tank: new Image(),
     weave: new Image(),
+    erratic: new Image(),
     midBoss: new Image(),
     finalBoss: new Image()
   };
@@ -108,6 +109,7 @@
   enemySprites.dash.src = "./enemy_dash.png";
   enemySprites.tank.src = "./enemy_tank.png";
   enemySprites.weave.src = "./enemy_weave.png";
+  enemySprites.erratic.src = "./enemy_erratic.png";
   enemySprites.midBoss.src = "./boss_mid.png";
   enemySprites.finalBoss.src = "./boss_final.png";
 
@@ -222,6 +224,7 @@
     if (type === "dash") return ["#ff6d00", "#ffab00", "#fff59d", "#ffffff"];
     if (type === "tank") return ["#78909c", "#90a4ae", "#cfd8dc", "#ffffff"];
     if (type === "weave") return ["#00e5ff", "#1de9b6", "#69f0ae", "#ffffff"];
+    if (type === "erratic") return ["#ffea00", "#ff4081", "#7c4dff", "#ffffff"];
     if (type === "mid") return ["#e040fb", "#00ffcc", "#ffd740", "#ffffff"];
     if (type === "final") return ["#ff1744", "#ff9100", "#ffd600", "#00ffcc", "#ffffff"];
     return ["#ff5252", "#ffab40", "#fff59d", "#ffffff"];
@@ -934,13 +937,19 @@
 
     const availableTypes = ["normal"];
     if (wave >= 2) {
-      availableTypes.push("zigzag", "tank");
+      availableTypes.push("tank");
     }
     if (wave >= 3) {
       availableTypes.push("dash");
     }
+    if (wave >= 4) {
+      availableTypes.push("zigzag");
+    }
     if (wave >= 5) {
       availableTypes.push("weave");
+    }
+    if (wave >= 7) {
+      availableTypes.push("erratic");
     }
 
     const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
@@ -995,6 +1004,21 @@
         speed: 1.8 + wave * 0.14,
         vx: (startFromLeft ? 1 : -1) * (3.1 + wave * 0.18),
         scoreValue: 220
+      });
+    } else if (type === "erratic") {
+      const width = 38;
+      const initialDir = Math.random() < 0.5 ? -1 : 1;
+      enemies.push({
+        type: "erratic",
+        x: 30 + Math.random() * (canvas.width - width - 60),
+        y: -40,
+        width: width,
+        height: 38,
+        hp: 2 + waveBonusHp,
+        speed: 1.7 + wave * 0.14,
+        vx: initialDir * (1.8 + Math.random() * 2.4),
+        shiftTimer: 16 + Math.floor(Math.random() * 14),
+        scoreValue: 280
       });
     } else {
       enemies.push({
@@ -1114,6 +1138,24 @@
 
       ctx.fillStyle = "#e0f7fa";
       ctx.fillRect(cx - 2, e.y + 14, 4, 6);
+    } else if (e.type === "erratic") {
+      // 不規則に動きを変えるアノマリーコア型フォールバック描画
+      ctx.fillStyle = "#4a148c";
+      ctx.beginPath();
+      ctx.moveTo(cx, e.y + 2);
+      ctx.lineTo(e.x + e.width - 2, cy);
+      ctx.lineTo(cx, e.y + e.height - 2);
+      ctx.lineTo(e.x + 2, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#ff4081";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffea00";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.fillStyle = "#c62828";
       ctx.beginPath();
@@ -1152,6 +1194,26 @@
       } else if (e.x >= canvas.width - e.width - 2) {
         e.x = canvas.width - e.width - 2;
         e.vx = -Math.abs(e.vx);
+      }
+    } else if (e.type === "erratic") {
+      e.shiftTimer--;
+      if (e.shiftTimer <= 0) {
+        e.shiftTimer = 20 + Math.floor(Math.random() * 20);
+        const roll = Math.random();
+        if (roll < 0.22) {
+          e.vx = 0;
+        } else {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          e.vx = dir * (1.5 + Math.random() * 3.3);
+        }
+      }
+      e.x += e.vx;
+      if (e.x <= 2) {
+        e.x = 2;
+        e.vx = Math.abs(e.vx || 2.5);
+      } else if (e.x >= canvas.width - e.width - 2) {
+        e.x = canvas.width - e.width - 2;
+        e.vx = -Math.abs(e.vx || 2.5);
       }
     }
 
