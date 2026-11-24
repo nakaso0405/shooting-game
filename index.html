@@ -43,6 +43,7 @@
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
   const PLAYER_INVINCIBLE_DURATION = 90; // 約1.5秒（60fps換算）
   const BASE_PLAYER_SPEED = 2.2;
+  const MAX_WAVE = 10;
 
   // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
   const menuBgm = new Audio("./menu_bgm.mp3");
@@ -158,7 +159,7 @@
     confirmReset = false;
   }
 
-  // ゲーム状態: "menu", "playing", "paused", "choosing", "gameover", "victory"
+  // ゲーム状態: "menu", "playing", "paused", "choosing", "waveSelect", "gameover", "victory"
   let gameState = "menu";
   let confirmReset = false;
   let score = 0;
@@ -599,27 +600,36 @@
   function getStartButtonRect() {
     return {
       x: (canvas.width - 220) / 2,
-      y: 280,
+      y: 274,
       width: 220,
-      height: 48
+      height: 46
     };
   }
 
   function getMuteButtonRect() {
     return {
       x: (canvas.width - 190) / 2,
-      y: 338,
+      y: 330,
       width: 190,
-      height: 38
+      height: 36
     };
   }
 
   function getResetButtonRect() {
     return {
       x: (canvas.width - 190) / 2,
-      y: 386,
+      y: 376,
       width: 190,
-      height: 38
+      height: 36
+    };
+  }
+
+  function getMenuRetryButtonRect() {
+    return {
+      x: (canvas.width - 190) / 2,
+      y: 422,
+      width: 190,
+      height: 36
     };
   }
 
@@ -677,12 +687,21 @@
     };
   }
 
+  function getGameOverRetryButtonRect() {
+    return {
+      x: (canvas.width - 210) / 2,
+      y: canvas.height / 2 + 72,
+      width: 210,
+      height: 44
+    };
+  }
+
   function getBackToMenuButtonRect() {
     return {
       x: (canvas.width - 210) / 2,
-      y: canvas.height / 2 + 78,
+      y: canvas.height / 2 + 124,
       width: 210,
-      height: 46
+      height: 44
     };
   }
 
@@ -694,10 +713,39 @@
     const startX = (canvas.width - (btnW * 4 + gap * 3)) / 2;
     return [
       { id: "god", label: isGodMode ? "無敵:ON" : "無敵:OFF", x: startX, y, width: btnW, height: btnH },
-      { id: "nextWave", label: "WAVE+1", x: startX + (btnW + gap), y, width: btnW, height: btnH },
+      { id: "waveSelect", label: "WAVE選択", x: startX + (btnW + gap), y, width: btnW, height: btnH },
       { id: "boss", label: wave < 5 ? "中ボスへ" : "ラスボスへ", x: startX + (btnW + gap) * 2, y, width: btnW, height: btnH },
       { id: "card", label: "カード選択", x: startX + (btnW + gap) * 3, y, width: btnW, height: btnH }
     ];
+  }
+
+  function getWaveSelectRects() {
+    const cols = 2;
+    const btnW = 136;
+    const btnH = 42;
+    const gapX = 16;
+    const gapY = 12;
+    const startX = (canvas.width - (btnW * cols + gapX)) / 2;
+    const startY = 112;
+    const rects = [];
+
+    for (let w = 1; w <= MAX_WAVE; w++) {
+      const idx = w - 1;
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      let suffix = "";
+      if (w === 5) suffix = " [MID]";
+      if (w === 10) suffix = " [FINAL]";
+      rects.push({
+        wave: w,
+        label: "WAVE " + w + suffix,
+        x: startX + col * (btnW + gapX),
+        y: startY + row * (btnH + gapY),
+        width: btnW,
+        height: btnH
+      });
+    }
+    return rects;
   }
 
   function isPointInRect(x, y, rect) {
@@ -741,7 +789,7 @@
   }
 
   function enterWave(targetWave) {
-    wave = Math.max(1, targetWave);
+    wave = Math.max(1, Math.min(MAX_WAVE, targetWave));
     killsInWave = 0;
     killsToNextWave = 10 + (wave - 1) * 5;
     bullets = [];
@@ -770,8 +818,9 @@
       if (isGodMode && player.hp <= 0) {
         player.hp = player.maxHp;
       }
-    } else if (actionId === "nextWave") {
-      enterWave(wave + 1);
+    } else if (actionId === "waveSelect") {
+      clearStickInput();
+      gameState = "waveSelect";
     } else if (actionId === "boss") {
       if (wave < 5) {
         enterWave(5);
@@ -890,6 +939,8 @@
       } else if (isPointInRect(x, y, getResetButtonRect())) {
         ensureBgmPlaying();
         confirmReset = true;
+      } else if (isPointInRect(x, y, getMenuRetryButtonRect())) {
+        startNewGame();
       } else {
         ensureBgmPlaying();
       }
@@ -907,7 +958,31 @@
       return;
     }
 
-    if (gameState === "gameover" || gameState === "victory") {
+    if (gameState === "waveSelect") {
+      if (!isDebugMode) {
+        gameState = "playing";
+        return;
+      }
+      const waveRects = getWaveSelectRects();
+      for (const r of waveRects) {
+        if (isPointInRect(x, y, r)) {
+          enterWave(r.wave);
+          break;
+        }
+      }
+      return;
+    }
+
+    if (gameState === "gameover") {
+      if (isPointInRect(x, y, getGameOverRetryButtonRect())) {
+        startNewGame();
+      } else if (isPointInRect(x, y, getBackToMenuButtonRect())) {
+        returnToMenu();
+      }
+      return;
+    }
+
+    if (gameState === "victory") {
       if (isPointInRect(x, y, getBackToMenuButtonRect())) {
         returnToMenu();
       }
@@ -1024,14 +1099,14 @@
     }
   });
 
-  // PCテスト用のショートカットキー（I: 無敵切替, N: 次WAVE, B: ボスへ, C: カード選択）
+  // PCテスト用のショートカットキー（I: 無敵切替, W: WAVE選択, B: ボスへ, C: カード選択）
   window.addEventListener("keydown", (e) => {
     if (!isDebugMode) return;
-    if (gameState !== "playing" && gameState !== "choosing") return;
+    if (gameState !== "playing" && gameState !== "choosing" && gameState !== "waveSelect") return;
     if (e.key === "i" || e.key === "I") {
       handleDebugAction("god");
-    } else if (e.key === "n" || e.key === "N") {
-      handleDebugAction("nextWave");
+    } else if (e.key === "w" || e.key === "W") {
+      handleDebugAction("waveSelect");
     } else if (e.key === "b" || e.key === "B") {
       handleDebugAction("boss");
     } else if (e.key === "c" || e.key === "C") {
@@ -1678,6 +1753,40 @@
     ctx.restore();
   }
 
+  function drawWaveSelectScreen() {
+    updateAndDrawStarfield(true, 0.35);
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.80)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "bold 22px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("WAVE SELECT", canvas.width / 2, 66);
+
+    ctx.fillStyle = "#cccccc";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("移動したいWAVEをタップしてください", canvas.width / 2, 92);
+
+    const waveRects = getWaveSelectRects();
+    for (const r of waveRects) {
+      const isBossWave = r.wave === 5 || r.wave === 10;
+      const isCurrent = r.wave === wave;
+      ctx.fillStyle = isBossWave ? "#2a1638" : "#162232";
+      ctx.strokeStyle = isCurrent ? "#ffd700" : (isBossWave ? "#ff77aa" : "#00ffcc");
+      ctx.lineWidth = isCurrent ? 2.5 : 1.5;
+      ctx.fillRect(r.x, r.y, r.width, r.height);
+      ctx.strokeRect(r.x, r.y, r.width, r.height);
+
+      ctx.fillStyle = isCurrent ? "#ffd700" : (isBossWave ? "#ff99bb" : "#ffffff");
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(r.label, r.x + r.width / 2, r.y + 26);
+    }
+
+    drawDebugOverlay();
+  }
+
   function drawHudAndPauseButton() {
     ctx.fillStyle = "white";
     ctx.font = "bold 15px sans-serif";
@@ -1765,33 +1874,33 @@
     ctx.fillStyle = "#00ffcc";
     ctx.font = "bold 24px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("ROGUELIKE", canvas.width / 2, 102);
+    ctx.fillText("ROGUELIKE", canvas.width / 2, 98);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 28px sans-serif";
-    ctx.fillText("SHOOTING", canvas.width / 2, 137);
+    ctx.fillText("SHOOTING", canvas.width / 2, 133);
 
     ctx.fillStyle = "#111927";
     ctx.strokeStyle = "#ffd700";
     ctx.lineWidth = 2;
-    ctx.fillRect(55, 176, canvas.width - 110, 76);
-    ctx.strokeRect(55, 176, canvas.width - 110, 76);
+    ctx.fillRect(55, 170, canvas.width - 110, 76);
+    ctx.strokeRect(55, 170, canvas.width - 110, 76);
 
     ctx.fillStyle = "#ffd700";
     ctx.font = "bold 14px sans-serif";
-    ctx.fillText("HIGH SCORE", canvas.width / 2, 203);
+    ctx.fillText("HIGH SCORE", canvas.width / 2, 197);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 24px sans-serif";
-    ctx.fillText(String(highScore), canvas.width / 2, 235);
+    ctx.fillText(String(highScore), canvas.width / 2, 229);
 
     const startBtn = getStartButtonRect();
     ctx.fillStyle = "#00ffcc";
     ctx.fillRect(startBtn.x, startBtn.y, startBtn.width, startBtn.height);
 
     ctx.fillStyle = "#05050a";
-    ctx.font = "bold 19px sans-serif";
-    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 31);
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 30);
 
     const muteBtn = getMuteButtonRect();
     ctx.fillStyle = isMuted ? "#261829" : "#12242b";
@@ -1801,8 +1910,8 @@
     ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
 
     ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 24);
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 23);
 
     if (confirmReset) {
       ctx.fillStyle = "#ff8899";
@@ -1837,13 +1946,24 @@
       ctx.strokeRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
 
       ctx.fillStyle = "#ff88a2";
-      ctx.font = "bold 14px sans-serif";
-      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 24);
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 23);
+
+      const retryBtn = getMenuRetryButtonRect();
+      ctx.fillStyle = "#102826";
+      ctx.strokeStyle = "#80ffea";
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
+      ctx.strokeRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
+
+      ctx.fillStyle = "#80ffea";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText("リトライ（最初から）", canvas.width / 2, retryBtn.y + 23);
     }
 
     ctx.fillStyle = "#8899aa";
     ctx.font = "13px sans-serif";
-    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 452);
+    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 484);
 
     drawDebugOverlay();
   }
@@ -1857,9 +1977,20 @@
     ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
 
     ctx.fillStyle = textColor;
-    ctx.font = "bold 17px sans-serif";
+    ctx.font = "bold 16px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("メニューに戻る", canvas.width / 2, btn.y + 29);
+    ctx.fillText("メニューに戻る", canvas.width / 2, btn.y + 28);
+  }
+
+  function drawGameOverRetryButton() {
+    const btn = getGameOverRetryButtonRect();
+    ctx.fillStyle = "#00ffcc";
+    ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
+
+    ctx.fillStyle = "#05050a";
+    ctx.font = "bold 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("リトライ", canvas.width / 2, btn.y + 28);
   }
 
   function drawChoosingScreen() {
@@ -1908,17 +2039,18 @@
     ctx.fillStyle = "#ff4444";
     ctx.font = "bold 32px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 58);
+    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 78);
 
     ctx.fillStyle = "white";
     ctx.font = "18px sans-serif";
-    ctx.fillText("到達 WAVE: " + wave, canvas.width / 2, canvas.height / 2 - 12);
-    ctx.fillText("SCORE: " + score, canvas.width / 2, canvas.height / 2 + 18);
+    ctx.fillText("到達 WAVE: " + wave, canvas.width / 2, canvas.height / 2 - 34);
+    ctx.fillText("SCORE: " + score, canvas.width / 2, canvas.height / 2 - 4);
 
     ctx.fillStyle = "#ffd700";
     ctx.font = "bold 16px sans-serif";
-    ctx.fillText("HIGH SCORE: " + highScore, canvas.width / 2, canvas.height / 2 + 50);
+    ctx.fillText("HIGH SCORE: " + highScore, canvas.width / 2, canvas.height / 2 + 28);
 
+    drawGameOverRetryButton();
     drawBackToMenuButton("#00ffcc", "#00ffcc");
     drawDebugOverlay();
   }
@@ -1988,6 +2120,8 @@
     } else if (gameState === "paused") {
       drawPlayingScene();
       drawPausedScreen();
+    } else if (gameState === "waveSelect") {
+      drawWaveSelectScreen();
     } else if (gameState === "playing") {
       frameCount++;
       if (player.invincibleTimer > 0) player.invincibleTimer--;
