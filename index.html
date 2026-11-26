@@ -49,13 +49,23 @@
   const MAX_BARRIERS = 3;
 
   // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
-  const menuBgm = new Audio("./menu_bgm.mp3");
-  menuBgm.loop = true;
-  menuBgm.volume = 0.45;
+  let menuBgm = null;
+  let gameBgm = null;
+  try {
+    menuBgm = new Audio("./menu_bgm.mp3");
+    menuBgm.loop = true;
+    menuBgm.volume = 0.45;
+  } catch (e) {
+    menuBgm = null;
+  }
 
-  const gameBgm = new Audio("./bgm.mp3");
-  gameBgm.loop = true;
-  gameBgm.volume = 0.45;
+  try {
+    gameBgm = new Audio("./bgm.mp3");
+    gameBgm.loop = true;
+    gameBgm.volume = 0.45;
+  } catch (e) {
+    gameBgm = null;
+  }
 
   let isMuted = false;
 
@@ -73,9 +83,11 @@
     const target = getTargetBgm();
     const other = target === menuBgm ? gameBgm : menuBgm;
 
-    if (!other.paused) {
-      other.pause();
+    if (other && !other.paused) {
+      try { other.pause(); } catch (e) {}
     }
+
+    if (!target) return;
 
     if (isMuted) {
       target.muted = true;
@@ -84,7 +96,12 @@
 
     target.muted = false;
     if (target.paused) {
-      target.play().catch(() => {});
+      try {
+        const playPromise = target.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {});
+        }
+      } catch (e) {}
     }
   }
 
@@ -94,8 +111,8 @@
 
   function toggleMute() {
     isMuted = !isMuted;
-    menuBgm.muted = isMuted;
-    gameBgm.muted = isMuted;
+    if (menuBgm) menuBgm.muted = isMuted;
+    if (gameBgm) gameBgm.muted = isMuted;
     syncBgmPlayback();
   }
 
@@ -543,13 +560,11 @@
     const pos = getPetPosition();
 
     ctx.save();
-    // 追尾オーラ
     ctx.fillStyle = "rgba(128, 255, 234, 0.22)";
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
     ctx.fill();
 
-    // ドローン型ペット本体
     ctx.fillStyle = "#80ffea";
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y - 8);
@@ -563,7 +578,6 @@
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    // コア
     ctx.fillStyle = "#ff4081";
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
@@ -607,7 +621,6 @@
       const cx = player.x + player.width / 2;
       const flameFlicker = (frameCount % 4) * 2;
 
-      // 推進ノズルの噴射炎
       ctx.fillStyle = "#ff9100";
       ctx.beginPath();
       ctx.moveTo(cx - 7, player.y + player.height - 2);
@@ -624,7 +637,6 @@
       ctx.closePath();
       ctx.fill();
 
-      // 主翼・機体シルエット
       ctx.fillStyle = "#00897b";
       ctx.beginPath();
       ctx.moveTo(cx, player.y + 8);
@@ -635,7 +647,6 @@
       ctx.closePath();
       ctx.fill();
 
-      // メインボディ
       ctx.fillStyle = player.color;
       ctx.beginPath();
       ctx.moveTo(cx, player.y);
@@ -649,7 +660,6 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // コックピット（キャノピー）
       ctx.fillStyle = "#1a237e";
       ctx.beginPath();
       ctx.ellipse(cx, player.y + 18, 4.2, 7.5, 0, 0, Math.PI * 2);
@@ -661,7 +671,6 @@
       ctx.fill();
     }
 
-    // バリア効果中 / 無敵時間中 / GodMode中のシールドリング表示
     if (hasBarrier) {
       const cx = player.x + player.width / 2;
       const cy = player.y + player.height / 2;
@@ -725,9 +734,11 @@
 
   function getCanvasCoords(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
+    const safeW = rect.width || canvas.width;
+    const safeH = rect.height || canvas.height;
     return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height)
+      x: (clientX - rect.left) * (canvas.width / safeW),
+      y: (clientY - rect.top) * (canvas.height / safeH)
     };
   }
 
@@ -803,7 +814,7 @@
   let choices = [];
   let boss = null;
 
-  // 落下アイテム（ハート・バリア・ボム）の生成と更新（ドロップ率控えめ調整済み）
+  // 落下アイテム（ハート・バリア・ボム）の生成と更新
   function spawnItemAt(x, y, forcedType = null) {
     const types = ["heart", "barrier", "bomb"];
     const type = forcedType || types[Math.floor(Math.random() * types.length)];
@@ -821,14 +832,12 @@
   }
 
   function maybeDropItemFromEnemy(e) {
-    // 敵撃破時のドロップ率を5%に控えめ調整
     if (Math.random() < 0.05) {
       spawnItemAt(e.x + e.width / 2, e.y + e.height / 2);
     }
   }
 
   function maybeSpawnSkyItem() {
-    // 上空からの自然落下を約18秒（1080フレーム）に1回ペースに調整
     if (frameCount > 0 && frameCount % 1080 === 0) {
       const randomX = 28 + Math.random() * (canvas.width - 56);
       spawnItemAt(randomX, -28);
@@ -2230,7 +2239,6 @@
           while (diff > Math.PI) diff -= Math.PI * 2;
           while (diff < -Math.PI) diff += Math.PI * 2;
 
-          // 旋回角度を少し緩やかに調整して「狙う感覚」を残す
           const maxTurn = 0.045 + player.homingLevel * 0.022;
           const newAngle = currentAngle + Math.max(-maxTurn, Math.min(maxTurn, diff));
           b.vx = Math.cos(newAngle) * speed;
@@ -2605,7 +2613,6 @@
         ctx.fillRect(cardX, cardY, cardW, cardH);
         ctx.strokeRect(cardX, cardY, cardW, cardH);
 
-        // 左側に敵イラスト描画
         const iconSize = entry.type === "finalBoss" ? 48 : 42;
         const iconX = cardX + 10 + (48 - iconSize) / 2;
         const iconY = cardY + (cardH - iconSize) / 2;
@@ -2617,7 +2624,6 @@
           height: iconSize
         });
 
-        // 名前と出現WAVE
         ctx.textAlign = "left";
         ctx.fillStyle = (entry.type === "midBoss" || entry.type === "finalBoss") ? "#ff88bb" : "#ffd700";
         ctx.font = "bold 13px sans-serif";
@@ -2628,14 +2634,12 @@
         ctx.font = "bold 11px sans-serif";
         ctx.fillText(entry.waveText, cardX + cardW - 10, cardY + 23);
 
-        // 動き方の説明
         ctx.textAlign = "left";
         ctx.fillStyle = "#e0e8f0";
         ctx.font = "11.5px sans-serif";
         ctx.fillText(entry.moveText, cardX + 68, cardY + 48);
       }
 
-      // ページ切り替えボタン
       if (encyclopediaPage > 0) {
         ctx.fillStyle = "#162232";
         ctx.strokeStyle = "#00ffcc";
@@ -3124,134 +3128,146 @@
   }
 
   function loop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (gameState === "menu") {
-      drawMenuScreen();
-    } else if (gameState === "encyclopedia") {
-      drawEncyclopediaScreen();
-    } else if (gameState === "paused") {
-      drawPlayingScene();
-      drawPausedScreen();
-    } else if (gameState === "waveSelect") {
-      drawWaveSelectScreen();
-    } else if (gameState === "playing") {
-      frameCount++;
-      if (player.invincibleTimer > 0) player.invincibleTimer--;
-      if (player.barrierTimer > 0) player.barrierTimer--;
-      if (bombFlashTimer > 0) bombFlashTimer--;
+      if (gameState === "menu") {
+        drawMenuScreen();
+      } else if (gameState === "encyclopedia") {
+        drawEncyclopediaScreen();
+      } else if (gameState === "paused") {
+        drawPlayingScene();
+        drawPausedScreen();
+      } else if (gameState === "waveSelect") {
+        drawWaveSelectScreen();
+      } else if (gameState === "playing") {
+        frameCount++;
+        if (player.invincibleTimer > 0) player.invincibleTimer--;
+        if (player.barrierTimer > 0) player.barrierTimer--;
+        if (bombFlashTimer > 0) bombFlashTimer--;
 
-      updateAndDrawStarfield(true, 1.0);
+        updateAndDrawStarfield(true, 1.0);
 
-      ctx.save();
-      if (screenShake > 0) {
-        const shakeX = (Math.random() - 0.5) * screenShake * 1.4;
-        const shakeY = (Math.random() - 0.5) * screenShake * 1.4;
-        ctx.translate(shakeX, shakeY);
-        screenShake = Math.max(0, screenShake - 0.5);
-      }
-
-      updatePlayerMovement();
-
-      if (frameCount % player.fireInterval === 0) {
-        shootBullets();
-      }
-      firePetBullets();
-
-      drawPet();
-      drawPlayerIllustration();
-      updateAndDrawPlayerBullets();
-      updateAndDrawItems();
-
-      if (wave === 5 || wave === 10) {
-        updateAndDrawBoss();
-      } else {
-        spawnEnemy();
-        const playerHitbox = getPlayerHitbox();
-        for (let i = enemies.length - 1; i >= 0; i--) {
-          let e = enemies[i];
-          updateAndDrawEnemy(e);
-
-          if (!isPlayerProtected() && isColliding(playerHitbox, e)) {
-            spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.3 : 1.0);
-            enemies.splice(i, 1);
-            if (damagePlayer(1)) {
-              break;
-            }
-            continue;
-          }
-
-          let destroyed = false;
-          for (let j = bullets.length - 1; j >= 0; j--) {
-            if (isColliding(bullets[j], e)) {
-              e.hp -= bullets[j].damage;
-              bullets.splice(j, 1);
-              if (e.hp <= 0) {
-                spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
-                maybeDropItemFromEnemy(e);
-                enemies.splice(i, 1);
-                score += e.scoreValue;
-                killsInWave++;
-                destroyed = true;
-              }
-              break;
-            }
-          }
-          if (destroyed) {
-            if (killsInWave >= killsToNextWave) {
-              clearStickInput();
-              generateChoices();
-              gameState = "choosing";
-              break;
-            }
-            continue;
-          }
-
-          if (e.y > canvas.height) {
-            enemies.splice(i, 1);
-          }
-        }
-      }
-
-      const playerHitboxForBullets = getPlayerHitbox();
-      for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        let eb = enemyBullets[i];
-        eb.x += eb.vx;
-        eb.y += eb.vy;
-        ctx.fillStyle = eb.color || "#ff55aa";
-        ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
-
-        if (!isPlayerProtected() && isColliding(playerHitboxForBullets, eb)) {
-          const hitDamage = eb.damage || 1;
-          enemyBullets.splice(i, 1);
-          if (damagePlayer(hitDamage)) {
-            break;
-          }
-          continue;
-        }
-
-        if (eb.y > canvas.height + 20 || eb.x < -20 || eb.x > canvas.width + 20) {
-          enemyBullets.splice(i, 1);
-        }
-      }
-
-      updateAndDrawEffects(true);
-      ctx.restore();
-
-      if (bombFlashTimer > 0) {
         ctx.save();
-        ctx.fillStyle = "rgba(255, 245, 200, " + (bombFlashTimer / 18) * 0.45 + ")";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.restore();
-      }
+        if (screenShake > 0) {
+          const shakeX = (Math.random() - 0.5) * screenShake * 1.4;
+          const shakeY = (Math.random() - 0.5) * screenShake * 1.4;
+          ctx.translate(shakeX, shakeY);
+          screenShake = Math.max(0, screenShake - 0.5);
+        }
 
-      drawHudAndPauseButton();
-    } else if (gameState === "choosing") {
-      drawChoosingScreen();
-    } else if (gameState === "gameover") {
-      drawGameOverScreen();
-    } else if (gameState === "victory") {
-      drawVictoryScreen();
+        updatePlayerMovement();
+
+        if (frameCount % player.fireInterval === 0) {
+          shootBullets();
+        }
+        firePetBullets();
+
+        drawPet();
+        drawPlayerIllustration();
+        updateAndDrawPlayerBullets();
+        updateAndDrawItems();
+
+        if (wave === 5 || wave === 10) {
+          updateAndDrawBoss();
+        } else {
+          spawnEnemy();
+          const playerHitbox = getPlayerHitbox();
+          for (let i = enemies.length - 1; i >= 0; i--) {
+            let e = enemies[i];
+            updateAndDrawEnemy(e);
+
+            if (!isPlayerProtected() && isColliding(playerHitbox, e)) {
+              spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.3 : 1.0);
+              enemies.splice(i, 1);
+              if (damagePlayer(1)) {
+                break;
+              }
+              continue;
+            }
+
+            let destroyed = false;
+            for (let j = bullets.length - 1; j >= 0; j--) {
+              if (isColliding(bullets[j], e)) {
+                e.hp -= bullets[j].damage;
+                bullets.splice(j, 1);
+                if (e.hp <= 0) {
+                  spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
+                  maybeDropItemFromEnemy(e);
+                  enemies.splice(i, 1);
+                  score += e.scoreValue;
+                  killsInWave++;
+                  destroyed = true;
+                }
+                break;
+              }
+            }
+            if (destroyed) {
+              if (killsInWave >= killsToNextWave) {
+                clearStickInput();
+                generateChoices();
+                gameState = "choosing";
+                break;
+              }
+              continue;
+            }
+
+            if (e.y > canvas.height) {
+              enemies.splice(i, 1);
+            }
+          }
+        }
+
+        const playerHitboxForBullets = getPlayerHitbox();
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+          let eb = enemyBullets[i];
+          eb.x += eb.vx;
+          eb.y += eb.vy;
+          ctx.fillStyle = eb.color || "#ff55aa";
+          ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
+
+          if (!isPlayerProtected() && isColliding(playerHitboxForBullets, eb)) {
+            const hitDamage = eb.damage || 1;
+            enemyBullets.splice(i, 1);
+            if (damagePlayer(hitDamage)) {
+              break;
+            }
+            continue;
+          }
+
+          if (eb.y > canvas.height + 20 || eb.x < -20 || eb.x > canvas.width + 20) {
+            enemyBullets.splice(i, 1);
+          }
+        }
+
+        updateAndDrawEffects(true);
+        ctx.restore();
+
+        if (bombFlashTimer > 0) {
+          ctx.save();
+          ctx.fillStyle = "rgba(255, 245, 200, " + (bombFlashTimer / 18) * 0.45 + ")";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.restore();
+        }
+
+        drawHudAndPauseButton();
+      } else if (gameState === "choosing") {
+        drawChoosingScreen();
+      } else if (gameState === "gameover") {
+        drawGameOverScreen();
+      } else if (gameState === "victory") {
+        drawVictoryScreen();
+      }
+    } catch (err) {
+      ctx.fillStyle = "#05050a";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ff6688";
+      ctx.font = "bold 14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("描画エラーが発生しました", canvas.width / 2, canvas.height / 2 - 10);
+      ctx.fillStyle = "#cccccc";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(String(err && err.message ? err.message : err), canvas.width / 2, canvas.height / 2 + 14);
     }
 
     requestAnimationFrame(loop);
