@@ -173,6 +173,7 @@
   let killsInWave = 0;
   let killsToNextWave = 10;
   let frameCount = 0;
+  let shotSequenceCount = 0;
   let bombFlashTimer = 0;
 
   // 図鑑データ（全解放・敵の種類と動き方 / アイテムの効果）
@@ -423,6 +424,7 @@
     barriers: 0,
     bombs: 0,
     homingLevel: 0,
+    petLevel: 0,
     fireInterval: 16,
     bulletCount: 1,
     bulletSpeed: 9,
@@ -521,6 +523,72 @@
     }
 
     return true;
+  }
+
+  // ペット（オプション機）の座標計算＆描画・自動攻撃
+  function getPetPosition() {
+    const cx = player.x + player.width / 2;
+    const cy = player.y + player.height / 2;
+    const orbitRadiusX = 36;
+    const orbitRadiusY = 22;
+    const angle = frameCount * 0.045;
+    return {
+      x: cx + Math.cos(angle) * orbitRadiusX,
+      y: cy + 8 + Math.sin(angle) * orbitRadiusY
+    };
+  }
+
+  function drawPet() {
+    if (player.petLevel <= 0) return;
+    const pos = getPetPosition();
+
+    ctx.save();
+    // 追尾オーラ
+    ctx.fillStyle = "rgba(128, 255, 234, 0.22)";
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ドローン型ペット本体
+    ctx.fillStyle = "#80ffea";
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y - 8);
+    ctx.lineTo(pos.x + 8, pos.y);
+    ctx.lineTo(pos.x, pos.y + 8);
+    ctx.lineTo(pos.x - 8, pos.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // コア
+    ctx.fillStyle = "#ff4081";
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function firePetBullets() {
+    if (player.petLevel <= 0) return;
+    const interval = Math.max(12, 26 - (player.petLevel - 1) * 4);
+    if (frameCount % interval !== 0) return;
+
+    const pos = getPetPosition();
+    const petDamage = player.petLevel;
+    bullets.push({
+      x: pos.x - 2.5,
+      y: pos.y - 8,
+      width: 5,
+      height: 11,
+      vx: 0,
+      vy: player.bulletSpeed + 1.5,
+      damage: petDamage,
+      homing: false,
+      fromPet: true
+    });
   }
 
   function drawPlayerIllustration() {
@@ -891,20 +959,100 @@
     }
   }
 
+  // ホーミング弾の発射周期（Lv1: 6発に1回 / Lv2: 4発に1回 / Lv3: 2発に1回）
+  function getHomingInterval(level) {
+    if (level <= 0) return Infinity;
+    if (level === 1) return 6;
+    if (level === 2) return 4;
+    return 2;
+  }
+
+  // 強化カード一覧
   const upgradePool = [
-    { id: "multi", minWave: 5, rarity: "normal", title: "拡散ショット", desc: "弾の同時発射数を +2", apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); } },
-    { id: "rapid", rarity: "normal", title: "超連射エンジン", desc: "弾の発射間隔を短縮", apply: () => { player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78)); } },
-    { id: "power", rarity: "normal", title: "高威力プラズマ", desc: "弾の攻撃力 +1", apply: () => { player.bulletDamage += 1; } },
-    { id: "heal", rarity: "normal", title: "ナノリペア", desc: "最大HP +1 ＆ 全回復", apply: () => { player.maxHp += 1; player.hp = player.maxHp; } },
-    { id: "speed", rarity: "normal", title: "高速弾丸", desc: "弾のスピードUP", apply: () => { player.bulletSpeed += 2.5; } },
-    { id: "moveSpeed", rarity: "normal", title: "ブースターアクセル", desc: "自機の移動速度UP (+1.0)", apply: () => { player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1))); } },
-    { id: "bulletSize", rarity: "normal", title: "ビッグバレット", desc: "弾のサイズUP", apply: () => {
-      player.bulletWidth = Math.min(24, player.bulletWidth + 3);
-      player.bulletHeight = Math.min(34, player.bulletHeight + 4);
-    } },
-    { id: "homing", rarity: "normal", title: "ホーミング弾", desc: "弾が近くの敵を自動追尾", apply: () => {
-      player.homingLevel = Math.min(3, player.homingLevel + 1);
-    } },
+    {
+      id: "spreadBasic",
+      minWave: 1,
+      rarity: "normal",
+      title: "拡散ショット",
+      desc: "弾の同時発射数を +1",
+      apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 1); }
+    },
+    {
+      id: "spreadPlus",
+      minWave: 6,
+      rarity: "normal",
+      title: "拡散ショットプラス",
+      desc: "弾の同時発射数を +2",
+      apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); }
+    },
+    {
+      id: "rapid",
+      rarity: "normal",
+      title: "超連射エンジン",
+      desc: "弾の発射間隔を短縮",
+      apply: () => { player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78)); }
+    },
+    {
+      id: "power",
+      rarity: "normal",
+      title: "高威力プラズマ",
+      desc: "弾の攻撃力 +1",
+      apply: () => { player.bulletDamage += 1; }
+    },
+    {
+      id: "heal",
+      rarity: "normal",
+      title: "ナノリペア",
+      desc: "最大HP+1全回復＆バリア・ボム+1",
+      apply: () => {
+        player.maxHp += 1;
+        player.hp = player.maxHp;
+        player.barriers = Math.min(MAX_BARRIERS, player.barriers + 1);
+        player.bombs = Math.min(MAX_BOMBS, player.bombs + 1);
+      }
+    },
+    {
+      id: "speed",
+      rarity: "normal",
+      title: "高速弾丸",
+      desc: "弾のスピードUP",
+      apply: () => { player.bulletSpeed += 2.5; }
+    },
+    {
+      id: "moveSpeed",
+      rarity: "normal",
+      title: "ブースターアクセル",
+      desc: "自機の移動速度UP (+1.0)",
+      apply: () => { player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1))); }
+    },
+    {
+      id: "bulletSize",
+      rarity: "normal",
+      title: "ビッグバレット",
+      desc: "弾のサイズUP",
+      apply: () => {
+        player.bulletWidth = Math.min(24, player.bulletWidth + 3);
+        player.bulletHeight = Math.min(34, player.bulletHeight + 4);
+      }
+    },
+    {
+      id: "homing",
+      rarity: "normal",
+      title: "ホーミング弾",
+      desc: "数発に1回追尾弾（取るほど増加）",
+      apply: () => {
+        player.homingLevel = Math.min(3, player.homingLevel + 1);
+      }
+    },
+    {
+      id: "pet",
+      rarity: "normal",
+      title: "ペット召喚 / 強化",
+      desc: "周回して自動攻撃するペット追加",
+      apply: () => {
+        player.petLevel = Math.min(3, player.petLevel + 1);
+      }
+    },
     {
       id: "hyperBlitz",
       minWave: 3,
@@ -919,6 +1067,34 @@
     }
   ];
 
+  function getCardDisplayInfo(card) {
+    if (card.id === "homing") {
+      const nextLv = Math.min(3, player.homingLevel + 1);
+      const nextInterval = getHomingInterval(nextLv);
+      return {
+        title: card.title + (player.homingLevel > 0 ? " Lv." + nextLv : ""),
+        desc: nextInterval + "発に1回、追尾弾が発射される"
+      };
+    }
+    if (card.id === "pet") {
+      if (player.petLevel <= 0) {
+        return {
+          title: "ペット召喚",
+          desc: "自機の周りを回りながら自動攻撃"
+        };
+      }
+      const nextLv = Math.min(3, player.petLevel + 1);
+      return {
+        title: "ペット強化 Lv." + nextLv,
+        desc: "ペットの攻撃力＆発射間隔UP"
+      };
+    }
+    return {
+      title: card.title,
+      desc: card.desc
+    };
+  }
+
   function pickWeightedCard(pool) {
     const totalWeight = pool.reduce((sum, item) => sum + (item.rarity === "rare" ? 1 : 4), 0);
     let roll = Math.random() * totalWeight;
@@ -930,7 +1106,13 @@
   }
 
   function generateChoices() {
-    const eligiblePool = upgradePool.filter((u) => !u.minWave || wave >= u.minWave);
+    const eligiblePool = upgradePool.filter((u) => {
+      if (u.minWave && wave < u.minWave) return false;
+      if (u.id === "homing" && player.homingLevel >= 3) return false;
+      if (u.id === "pet" && player.petLevel >= 3) return false;
+      return true;
+    });
+
     const remaining = [...eligiblePool];
     choices = [];
 
@@ -1248,6 +1430,7 @@
     killsInWave = 0;
     killsToNextWave = 10;
     frameCount = 0;
+    shotSequenceCount = 0;
     bombFlashTimer = 0;
     boss = null;
     particles = [];
@@ -1262,6 +1445,7 @@
     player.barriers = 0;
     player.bombs = 0;
     player.homingLevel = 0;
+    player.petLevel = 0;
     player.fireInterval = 16;
     player.bulletCount = 1;
     player.bulletSpeed = 9;
@@ -1974,6 +2158,10 @@
   }
 
   function shootBullets() {
+    shotSequenceCount++;
+    const homingInterval = getHomingInterval(player.homingLevel);
+    const isHomingShot = player.homingLevel > 0 && (shotSequenceCount % homingInterval === 0);
+
     const centerX = player.x + player.width / 2 - player.bulletWidth / 2;
     const count = player.bulletCount;
     const spreadStep = 0.42;
@@ -1991,7 +2179,8 @@
         vx: vx,
         vy: vy,
         damage: player.bulletDamage,
-        homing: player.homingLevel > 0
+        homing: isHomingShot,
+        fromPet: false
       });
     }
   }
@@ -2041,7 +2230,8 @@
           while (diff > Math.PI) diff -= Math.PI * 2;
           while (diff < -Math.PI) diff += Math.PI * 2;
 
-          const maxTurn = 0.065 + player.homingLevel * 0.035;
+          // 旋回角度を少し緩やかに調整して「狙う感覚」を残す
+          const maxTurn = 0.045 + player.homingLevel * 0.022;
           const newAngle = currentAngle + Math.max(-maxTurn, Math.min(maxTurn, diff));
           b.vx = Math.cos(newAngle) * speed;
           b.vy = -Math.sin(newAngle) * speed;
@@ -2051,7 +2241,7 @@
       b.x += b.vx;
       b.y -= b.vy;
 
-      ctx.fillStyle = b.homing ? "#80ffea" : "#ffff00";
+      ctx.fillStyle = b.homing ? "#80ffea" : (b.fromPet ? "#ff80ab" : "#ffff00");
       ctx.fillRect(b.x, b.y, b.width, b.height);
 
       if (b.y < -25 || b.y > canvas.height + 25 || b.x < -25 || b.x > canvas.width + 25) {
@@ -2616,7 +2806,7 @@
     const bombBtn = getBombButtonRect();
     const hasBomb = player.bombs > 0;
     ctx.save();
-    ctx.fillStyle = hasBomb ? "rgba(42, 26, 8, 0.9)" : "rgba(20, 24, 32, 0.72)";
+    ctx.fillStyle = hasBomb ? "rgba(42, 26, 8, 0.9)" : "rgba(20, 24, 32, 0.72)");
     ctx.strokeStyle = hasBomb ? "#ff9100" : "#556677";
     ctx.lineWidth = 2;
     ctx.fillRect(bombBtn.x, bombBtn.y, bombBtn.width, bombBtn.height);
@@ -2826,6 +3016,7 @@
     const cardRects = getCardRects();
     for (const r of cardRects) {
       const isRare = r.choice.rarity === "rare";
+      const displayInfo = getCardDisplayInfo(r.choice);
       ctx.fillStyle = isRare ? "#2a1638" : "#1a2234";
       ctx.strokeStyle = isRare ? "#ff66ff" : "#00ffcc";
       ctx.lineWidth = isRare ? 2.5 : 2;
@@ -2835,11 +3026,11 @@
       ctx.fillStyle = isRare ? "#ff99ff" : "#ffd700";
       ctx.font = "bold 18px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(r.choice.title, r.x + 16, r.y + 32);
+      ctx.fillText(displayInfo.title, r.x + 16, r.y + 32);
 
       ctx.fillStyle = "#e0e0e0";
       ctx.font = "14px sans-serif";
-      ctx.fillText(r.choice.desc, r.x + 16, r.y + 60);
+      ctx.fillText(displayInfo.desc, r.x + 16, r.y + 60);
     }
 
     drawDebugOverlay();
@@ -2899,11 +3090,12 @@
 
   function drawPlayingScene() {
     updateAndDrawStarfield(false);
+    drawPet();
     drawPlayerIllustration();
 
     for (let i = 0; i < bullets.length; i++) {
       const b = bullets[i];
-      ctx.fillStyle = b.homing ? "#80ffea" : "#ffff00";
+      ctx.fillStyle = b.homing ? "#80ffea" : (b.fromPet ? "#ff80ab" : "#ffff00");
       ctx.fillRect(b.x, b.y, b.width, b.height);
     }
 
@@ -2964,7 +3156,9 @@
       if (frameCount % player.fireInterval === 0) {
         shootBullets();
       }
+      firePetBullets();
 
+      drawPet();
       drawPlayerIllustration();
       updateAndDrawPlayerBullets();
       updateAndDrawItems();
