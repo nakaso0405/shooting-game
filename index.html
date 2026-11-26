@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>タッチ＆スライド / 矢印キー・WASD で移動！（P / Esc で一時停止）</p>
+  <p>タッチ＆スライド / 矢印キー・WASD で移動！（Spaceでボム / Pで一時停止）</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -42,8 +42,10 @@
 
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
   const PLAYER_INVINCIBLE_DURATION = 90; // 約1.5秒（60fps換算）
+  const BARRIER_ITEM_DURATION = 300; // バリアアイテムの無敵時間（約5秒）
   const BASE_PLAYER_SPEED = 2.2;
   const MAX_WAVE = 10;
+  const MAX_BOMBS = 3;
 
   // BGM設定（メニュー用とプレイ用で別々の曲を設定できます）
   const menuBgm = new Audio("./menu_bgm.mp3");
@@ -168,6 +170,7 @@
   let killsInWave = 0;
   let killsToNextWave = 10;
   let frameCount = 0;
+  let bombFlashTimer = 0;
 
   // 流れる星空の背景（遠景・中景・近景の3層パララックス）
   const STAR_COLORS = ["#ffffff", "#cceeff", "#aaddff", "#fff5cc", "#80ffea"];
@@ -235,6 +238,9 @@
     if (type === "erratic") return ["#00b0ff", "#40c4ff", "#18ffff", "#ffffff"];
     if (type === "mid") return ["#e040fb", "#00ffcc", "#ffd740", "#ffffff"];
     if (type === "final") return ["#ff1744", "#ff9100", "#ffd600", "#00ffcc", "#ffffff"];
+    if (type === "item_heart") return ["#ff4081", "#ff80ab", "#ffffff"];
+    if (type === "item_barrier") return ["#00e5ff", "#84ffff", "#ffffff"];
+    if (type === "item_bomb") return ["#ff9100", "#ffd740", "#ffffff"];
     return ["#ff5252", "#ffab40", "#fff59d", "#ffffff"];
   }
 
@@ -337,6 +343,9 @@
     hp: 3,
     maxHp: 3,
     invincibleTimer: 0,
+    barrierTimer: 0,
+    bombs: 1,
+    homingLevel: 0,
     fireInterval: 16,
     bulletCount: 1,
     bulletSpeed: 9,
@@ -358,9 +367,12 @@
     };
   }
 
+  function isPlayerProtected() {
+    return isGodMode || player.invincibleTimer > 0 || player.barrierTimer > 0;
+  }
+
   function damagePlayer(amount = 1) {
-    if (isGodMode) return false;
-    if (player.invincibleTimer > 0) return false;
+    if (isPlayerProtected()) return false;
     player.hp -= amount;
     player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
     spawnExplosion(player.x + player.width / 2, player.y + player.height / 2, "dash", 0.9);
@@ -371,14 +383,70 @@
     return true;
   }
 
+  function useBomb() {
+    if (gameState !== "playing") return false;
+    if (player.bombs <= 0) return false;
+
+    player.bombs--;
+    bombFlashTimer = 18;
+    player.invincibleTimer = Math.max(player.invincibleTimer, 60);
+    screenShake = 8;
+
+    const px = player.x + player.width / 2;
+    const py = player.y + player.height / 2;
+    spawnExplosion(px, py, "item_bomb", 2.8);
+
+    // 敵弾を全消去
+    enemyBullets = [];
+
+    // 画面内の通常敵を撃破
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
+      score += e.scoreValue;
+      killsInWave++;
+      enemies.splice(i, 1);
+    }
+
+    // ボスがいる場合は大ダメージ
+    if (boss) {
+      const bombDamage = boss.type === "mid" ? 28 : 95;
+      boss.hp -= bombDamage;
+      spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "item_bomb", 1.8);
+
+      if (boss.type === "mid" && boss.hp <= 0) {
+        spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "mid", 2.1);
+        score += 1000;
+        boss = null;
+        clearStickInput();
+        generateChoices();
+        gameState = "choosing";
+        return true;
+      } else if (boss.type === "final" && boss.hp <= 0) {
+        spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "final", 2.8);
+        score += 3000;
+        boss = null;
+        triggerVictory();
+        return true;
+      }
+    } else if (killsInWave >= killsToNextWave) {
+      clearStickInput();
+      generateChoices();
+      gameState = "choosing";
+    }
+
+    return true;
+  }
+
   function drawPlayerIllustration() {
-    const isInvincible = player.invincibleTimer > 0 || isGodMode;
-    if (!isGodMode && player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 3) % 2 !== 0) {
+    const hasBarrier = player.barrierTimer > 0;
+    const isBlinking = !isGodMode && !hasBarrier && player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 3) % 2 !== 0;
+    if (isBlinking) {
       return;
     }
 
     ctx.save();
-    if (isInvincible) {
+    if (!hasBarrier && (player.invincibleTimer > 0 || isGodMode)) {
       ctx.globalAlpha = isGodMode ? 0.92 : 0.72;
     }
 
@@ -440,8 +508,24 @@
       ctx.fill();
     }
 
-    // 無敵時間中・GodMode中のバリアリング表示
-    if (isInvincible) {
+    // バリアアイテム効果中 / 無敵時間中 / GodMode中のシールドリング表示
+    if (hasBarrier) {
+      const cx = player.x + player.width / 2;
+      const cy = player.y + player.height / 2;
+      const isExpiring = player.barrierTimer < 75 && Math.floor(player.barrierTimer / 4) % 2 === 0;
+      if (!isExpiring) {
+        ctx.fillStyle = "rgba(0, 229, 255, 0.16)";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (player.invincibleTimer > 0 || isGodMode) {
       const cx = player.x + player.width / 2;
       const cy = player.y + player.height / 2;
       ctx.strokeStyle = isGodMode ? "#ffd700" : "#80ffff";
@@ -565,8 +649,162 @@
   let bullets = [];
   let enemies = [];
   let enemyBullets = [];
+  let items = [];
   let choices = [];
   let boss = null;
+
+  // 落下アイテム（ハート・バリア・ボム）の生成と更新
+  function spawnItemAt(x, y, forcedType = null) {
+    const types = ["heart", "barrier", "bomb"];
+    const type = forcedType || types[Math.floor(Math.random() * types.length)];
+    const size = 26;
+    const clampedX = Math.max(12, Math.min(canvas.width - size - 12, x - size / 2));
+    items.push({
+      type: type,
+      x: clampedX,
+      y: y,
+      width: size,
+      height: size,
+      vy: 1.85,
+      wobblePhase: Math.random() * Math.PI * 2
+    });
+  }
+
+  function maybeDropItemFromEnemy(e) {
+    // 敵撃破時に約14%の確率でアイテムをドロップ
+    if (Math.random() < 0.14) {
+      spawnItemAt(e.x + e.width / 2, e.y + e.height / 2);
+    }
+  }
+
+  function maybeSpawnSkyItem() {
+    // 定期的に上空からもランダムで降ってくる（約9秒に1回ペース）
+    if (frameCount > 0 && frameCount % 540 === 0) {
+      const randomX = 28 + Math.random() * (canvas.width - 56);
+      spawnItemAt(randomX, -28);
+    }
+  }
+
+  function collectItem(item) {
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+
+    if (item.type === "heart") {
+      if (player.hp < player.maxHp) {
+        player.hp++;
+      } else {
+        score += 300;
+      }
+      spawnExplosion(cx, cy, "item_heart", 1.0);
+    } else if (item.type === "barrier") {
+      player.barrierTimer = BARRIER_ITEM_DURATION;
+      spawnExplosion(cx, cy, "item_barrier", 1.1);
+    } else if (item.type === "bomb") {
+      if (player.bombs < MAX_BOMBS) {
+        player.bombs++;
+      } else {
+        score += 300;
+      }
+      spawnExplosion(cx, cy, "item_bomb", 1.0);
+    }
+  }
+
+  function drawItem(item) {
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    const r = item.width / 2;
+
+    ctx.save();
+    if (item.type === "heart") {
+      ctx.fillStyle = "rgba(255, 64, 129, 0.25)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#ff80ab";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // ハートアイコン
+      ctx.fillStyle = "#ff4081";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + 7);
+      ctx.bezierCurveTo(cx - 10, cy, cx - 10, cy - 8, cx, cy - 3);
+      ctx.bezierCurveTo(cx + 10, cy - 8, cx + 10, cy, cx, cy + 7);
+      ctx.fill();
+    } else if (item.type === "barrier") {
+      ctx.fillStyle = "rgba(0, 229, 255, 0.24)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#00e5ff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // シールドアイコン
+      ctx.fillStyle = "#84ffff";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 8);
+      ctx.lineTo(cx + 7, cy - 4);
+      ctx.lineTo(cx + 6, cy + 3);
+      ctx.lineTo(cx, cy + 8);
+      ctx.lineTo(cx - 6, cy + 3);
+      ctx.lineTo(cx - 7, cy - 4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (item.type === "bomb") {
+      ctx.fillStyle = "rgba(255, 145, 0, 0.26)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#ffd740";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      // ボムアイコン
+      ctx.fillStyle = "#ff9100";
+      ctx.beginPath();
+      ctx.arc(cx, cy + 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(cx + 3, cy - 4);
+      ctx.lineTo(cx + 7, cy - 8);
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffff00";
+      ctx.fillRect(cx + 6, cy - 10, 3, 3);
+    }
+    ctx.restore();
+  }
+
+  function updateAndDrawItems() {
+    maybeSpawnSkyItem();
+    const playerHitbox = getPlayerHitbox();
+
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      item.y += item.vy;
+      item.wobblePhase += 0.08;
+      item.x += Math.sin(item.wobblePhase) * 0.45;
+
+      drawItem(item);
+
+      if (isColliding(playerHitbox, item)) {
+        collectItem(item);
+        items.splice(i, 1);
+        continue;
+      }
+
+      if (item.y > canvas.height + 30) {
+        items.splice(i, 1);
+      }
+    }
+  }
 
   const upgradePool = [
     { id: "multi", minWave: 5, rarity: "normal", title: "拡散ショット", desc: "弾の同時発射数を +2", apply: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); } },
@@ -578,6 +816,9 @@
     { id: "bulletSize", rarity: "normal", title: "ビッグバレット", desc: "弾のサイズUP", apply: () => {
       player.bulletWidth = Math.min(24, player.bulletWidth + 3);
       player.bulletHeight = Math.min(34, player.bulletHeight + 4);
+    } },
+    { id: "homing", rarity: "normal", title: "ホーミング弾", desc: "弾が近くの敵を自動追尾", apply: () => {
+      player.homingLevel = Math.min(3, player.homingLevel + 1);
     } },
     {
       id: "hyperBlitz",
@@ -682,6 +923,15 @@
       y: 32,
       width: 72,
       height: 24
+    };
+  }
+
+  function getBombButtonRect() {
+    return {
+      x: canvas.width - 88,
+      y: isDebugMode ? canvas.height - 76 : canvas.height - 46,
+      width: 76,
+      height: 34
     };
   }
 
@@ -829,6 +1079,7 @@
     bullets = [];
     enemies = [];
     enemyBullets = [];
+    items = [];
     particles = [];
     shockwaves = [];
     screenShake = 0;
@@ -878,6 +1129,7 @@
     killsInWave = 0;
     killsToNextWave = 10;
     frameCount = 0;
+    bombFlashTimer = 0;
     boss = null;
     particles = [];
     shockwaves = [];
@@ -887,6 +1139,9 @@
     player.maxHp = 3;
     player.speed = BASE_PLAYER_SPEED;
     player.invincibleTimer = 0;
+    player.barrierTimer = 0;
+    player.bombs = 1;
+    player.homingLevel = 0;
     player.fireInterval = 16;
     player.bulletCount = 1;
     player.bulletSpeed = 9;
@@ -898,6 +1153,7 @@
     bullets = [];
     enemies = [];
     enemyBullets = [];
+    items = [];
   }
 
   function startNewGame() {
@@ -1065,6 +1321,12 @@
         pauseGame();
         return;
       }
+
+      if (isPointInRect(pos.x, pos.y, getBombButtonRect())) {
+        useBomb();
+        return;
+      }
+
       if (!dragInput.active) {
         beginStickInput(t.clientX, t.clientY, t.identifier);
       }
@@ -1120,6 +1382,12 @@
         pauseGame();
         return;
       }
+
+      if (isPointInRect(pos.x, pos.y, getBombButtonRect())) {
+        useBomb();
+        return;
+      }
+
       isMouseDown = true;
       beginStickInput(e.clientX, e.clientY, "mouse");
     } else {
@@ -1140,7 +1408,7 @@
     }
   });
 
-  // キーボード操作（矢印キー・WASD移動 / P・Esc一時停止 / デバッグショートカット）
+  // キーボード操作（矢印キー・WASD移動 / Spaceでボム / P・Esc一時停止 / デバッグショートカット）
   window.addEventListener("keydown", (e) => {
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(e.key)) {
       e.preventDefault();
@@ -1154,6 +1422,11 @@
       keysPressed.up = true;
     } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
       keysPressed.down = true;
+    }
+
+    if (e.key === " " && gameState === "playing") {
+      useBomb();
+      return;
     }
 
     if (e.key === "p" || e.key === "P" || e.key === "Escape") {
@@ -1351,7 +1624,6 @@
       ctx.closePath();
       ctx.fill();
     } else if (e.type === "tank") {
-      // 隕石（岩塊）フォールバック描画
       ctx.fillStyle = "#607d8b";
       ctx.beginPath();
       ctx.moveTo(cx - 4, e.y + 3);
@@ -1378,7 +1650,6 @@
       ctx.arc(cx - 3, cy + 9, 3.5, 0, Math.PI * 2);
       ctx.fill();
     } else if (e.type === "weave") {
-      // 画面端から端をジグザグに折り返す高速グライダー型
       ctx.fillStyle = "#00695c";
       ctx.beginPath();
       ctx.moveTo(cx, e.y + e.height);
@@ -1405,7 +1676,6 @@
       ctx.fillStyle = "#e0f7fa";
       ctx.fillRect(cx - 2, e.y + 14, 4, 6);
     } else if (e.type === "erratic") {
-      // 不規則に動きを変えるアノマリーコア型フォールバック描画
       ctx.fillStyle = "#4a148c";
       ctx.beginPath();
       ctx.moveTo(cx, e.y + 2);
@@ -1496,20 +1766,88 @@
   function shootBullets() {
     const centerX = player.x + player.width / 2 - player.bulletWidth / 2;
     const count = player.bulletCount;
-    const spreadStep = 0.22;
+    // 拡散角度を広めに調整
+    const spreadStep = 0.42;
 
     for (let i = 0; i < count; i++) {
       const offsetIndex = i - (count - 1) / 2;
-      const vx = offsetIndex * spreadStep * player.bulletSpeed * 0.35;
+      const angle = offsetIndex * spreadStep * 0.45;
+      const vx = Math.sin(angle) * player.bulletSpeed;
+      const vy = Math.cos(angle) * player.bulletSpeed;
       bullets.push({
         x: centerX,
         y: player.y,
         width: player.bulletWidth,
         height: player.bulletHeight,
         vx: vx,
-        vy: player.bulletSpeed,
-        damage: player.bulletDamage
+        vy: vy,
+        damage: player.bulletDamage,
+        homing: player.homingLevel > 0
       });
+    }
+  }
+
+  function findNearestTarget(bx, by) {
+    let bestTarget = null;
+    let bestDist = Infinity;
+
+    if (boss) {
+      const tx = boss.x + boss.width / 2;
+      const ty = boss.y + boss.height / 2;
+      const dist = Math.hypot(tx - bx, ty - by);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTarget = { x: tx, y: ty };
+      }
+    }
+
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      if (e.y + e.height < 0) continue;
+      const tx = e.x + e.width / 2;
+      const ty = e.y + e.height / 2;
+      const dist = Math.hypot(tx - bx, ty - by);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTarget = { x: tx, y: ty };
+      }
+    }
+
+    return bestTarget;
+  }
+
+  function updateAndDrawPlayerBullets() {
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+
+      if (b.homing && player.homingLevel > 0) {
+        const bx = b.x + b.width / 2;
+        const by = b.y + b.height / 2;
+        const target = findNearestTarget(bx, by);
+        if (target) {
+          const speed = Math.hypot(b.vx, -b.vy) || player.bulletSpeed;
+          const currentAngle = Math.atan2(-b.vy, b.vx);
+          const desiredAngle = Math.atan2(target.y - by, target.x - bx);
+          let diff = desiredAngle - currentAngle;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+
+          const maxTurn = 0.065 + player.homingLevel * 0.035;
+          const newAngle = currentAngle + Math.max(-maxTurn, Math.min(maxTurn, diff));
+          b.vx = Math.cos(newAngle) * speed;
+          b.vy = -Math.sin(newAngle) * speed;
+        }
+      }
+
+      b.x += b.vx;
+      b.y -= b.vy;
+
+      ctx.fillStyle = b.homing ? "#80ffea" : "#ffff00";
+      ctx.fillRect(b.x, b.y, b.width, b.height);
+
+      if (b.y < -25 || b.y > canvas.height + 25 || b.x < -25 || b.x > canvas.width + 25) {
+        bullets.splice(i, 1);
+      }
     }
   }
 
@@ -1776,7 +2114,7 @@
     }
 
     const playerHitbox = getPlayerHitbox();
-    if (boss && player.invincibleTimer === 0 && isColliding(playerHitbox, boss)) {
+    if (boss && !isPlayerProtected() && isColliding(playerHitbox, boss)) {
       damagePlayer(boss.type === "final" ? 2 : 1);
     }
   }
@@ -1885,6 +2223,22 @@
     ctx.font = "bold 11px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("|| 一時停止", pauseBtn.x + pauseBtn.width / 2, pauseBtn.y + 16);
+
+    // 右下のボムボタン（ストック表示＆使用）
+    const bombBtn = getBombButtonRect();
+    const hasBomb = player.bombs > 0;
+    ctx.save();
+    ctx.fillStyle = hasBomb ? "rgba(42, 26, 8, 0.9)" : "rgba(20, 24, 32, 0.72)";
+    ctx.strokeStyle = hasBomb ? "#ff9100" : "#556677";
+    ctx.lineWidth = 2;
+    ctx.fillRect(bombBtn.x, bombBtn.y, bombBtn.width, bombBtn.height);
+    ctx.strokeRect(bombBtn.x, bombBtn.y, bombBtn.width, bombBtn.height);
+
+    ctx.fillStyle = hasBomb ? "#ffd740" : "#778899";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("BOMB x" + player.bombs, bombBtn.x + bombBtn.width / 2, bombBtn.y + 21);
+    ctx.restore();
 
     drawDebugOverlay();
   }
@@ -2147,10 +2501,14 @@
     updateAndDrawStarfield(false);
     drawPlayerIllustration();
 
-    ctx.fillStyle = "#ffff00";
     for (let i = 0; i < bullets.length; i++) {
       const b = bullets[i];
+      ctx.fillStyle = b.homing ? "#80ffea" : "#ffff00";
       ctx.fillRect(b.x, b.y, b.width, b.height);
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      drawItem(items[i]);
     }
 
     if (wave === 5 || wave === 10) {
@@ -2186,6 +2544,8 @@
     } else if (gameState === "playing") {
       frameCount++;
       if (player.invincibleTimer > 0) player.invincibleTimer--;
+      if (player.barrierTimer > 0) player.barrierTimer--;
+      if (bombFlashTimer > 0) bombFlashTimer--;
 
       updateAndDrawStarfield(true, 1.0);
 
@@ -2204,17 +2564,8 @@
       }
 
       drawPlayerIllustration();
-
-      ctx.fillStyle = "#ffff00";
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        let b = bullets[i];
-        b.x += b.vx;
-        b.y -= b.vy;
-        ctx.fillRect(b.x, b.y, b.width, b.height);
-        if (b.y < -20 || b.x < -20 || b.x > canvas.width + 20) {
-          bullets.splice(i, 1);
-        }
-      }
+      updateAndDrawPlayerBullets();
+      updateAndDrawItems();
 
       if (wave === 5 || wave === 10) {
         updateAndDrawBoss();
@@ -2225,7 +2576,7 @@
           let e = enemies[i];
           updateAndDrawEnemy(e);
 
-          if (!isGodMode && player.invincibleTimer === 0 && isColliding(playerHitbox, e)) {
+          if (!isPlayerProtected() && isColliding(playerHitbox, e)) {
             spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.3 : 1.0);
             enemies.splice(i, 1);
             if (damagePlayer(1)) {
@@ -2241,6 +2592,7 @@
               bullets.splice(j, 1);
               if (e.hp <= 0) {
                 spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
+                maybeDropItemFromEnemy(e);
                 enemies.splice(i, 1);
                 score += e.scoreValue;
                 killsInWave++;
@@ -2273,7 +2625,7 @@
         ctx.fillStyle = eb.color || "#ff55aa";
         ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
 
-        if (!isGodMode && player.invincibleTimer === 0 && isColliding(playerHitboxForBullets, eb)) {
+        if (!isPlayerProtected() && isColliding(playerHitboxForBullets, eb)) {
           const hitDamage = eb.damage || 1;
           enemyBullets.splice(i, 1);
           if (damagePlayer(hitDamage)) {
@@ -2289,6 +2641,14 @@
 
       updateAndDrawEffects(true);
       ctx.restore();
+
+      if (bombFlashTimer > 0) {
+        ctx.save();
+        ctx.fillStyle = "rgba(255, 245, 200, " + (bombFlashTimer / 18) * 0.45 + ")";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+
       drawHudAndPauseButton();
     } else if (gameState === "choosing") {
       drawChoosingScreen();
