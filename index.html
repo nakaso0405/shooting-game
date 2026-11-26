@@ -34,7 +34,7 @@
 <body>
 
   <canvas id="gameCanvas" width="360" height="540"></canvas>
-  <p>画面をタッチ＆スライドして上下左右に移動！</p>
+  <p>タッチ＆スライド / 矢印キー・WASD で移動！（P / Esc で一時停止）</p>
 
 <script>
   const canvas = document.getElementById("gameCanvas");
@@ -454,6 +454,21 @@
     ctx.restore();
   }
 
+  // キーボード入力状態（矢印キー・WASD）
+  const keysPressed = {
+    left: false,
+    right: false,
+    up: false,
+    down: false
+  };
+
+  function clearKeyInput() {
+    keysPressed.left = false;
+    keysPressed.right = false;
+    keysPressed.up = false;
+    keysPressed.down = false;
+  }
+
   // 指を止めた瞬間にピタッと止まる「相対スライド追従」操作処理
   const dragInput = {
     active: false,
@@ -504,11 +519,34 @@
     dragInput.pendingDy += diffY;
   }
 
+  function clampPlayerPosition() {
+    if (player.x < 0) player.x = 0;
+    if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+    if (player.y < 56) player.y = 56;
+    if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
+  }
+
   function updatePlayerMovement() {
+    // キーボード移動（矢印キー / WASD）
+    let kx = 0;
+    let ky = 0;
+    if (keysPressed.left) kx -= 1;
+    if (keysPressed.right) kx += 1;
+    if (keysPressed.up) ky -= 1;
+    if (keysPressed.down) ky += 1;
+
+    if (kx !== 0 || ky !== 0) {
+      const len = Math.hypot(kx, ky);
+      const keyMoveSpeed = Math.max(3.6, player.speed * 1.45);
+      player.x += (kx / len) * keyMoveSpeed;
+      player.y += (ky / len) * keyMoveSpeed;
+      clampPlayerPosition();
+    }
+
+    // タッチ／マウス相対スライド追従移動
     if (!dragInput.active) return;
     if (dragInput.pendingDx === 0 && dragInput.pendingDy === 0) return;
 
-    // 落ち着いて狙いやすい控えめな追従感度と1フレーム上限
     const sensitivity = 0.55 * (player.speed / BASE_PLAYER_SPEED);
     const maxStep = player.speed * 1.65;
 
@@ -518,14 +556,10 @@
     player.x += moveX;
     player.y += moveY;
 
-    // 使い切った移動量をリセット（次のフレームで指が止まっていれば即停止）
     dragInput.pendingDx = 0;
     dragInput.pendingDy = 0;
 
-    if (player.x < 0) player.x = 0;
-    if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
-    if (player.y < 56) player.y = 56;
-    if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
+    clampPlayerPosition();
   }
 
   let bullets = [];
@@ -820,6 +854,7 @@
       }
     } else if (actionId === "waveSelect") {
       clearStickInput();
+      clearKeyInput();
       gameState = "waveSelect";
     } else if (actionId === "boss") {
       if (wave < 5) {
@@ -829,6 +864,7 @@
       }
     } else if (actionId === "card") {
       clearStickInput();
+      clearKeyInput();
       generateChoices();
       gameState = "choosing";
     }
@@ -836,6 +872,7 @@
 
   function resetGameStats() {
     clearStickInput();
+    clearKeyInput();
     score = 0;
     wave = 1;
     killsInWave = 0;
@@ -872,11 +909,13 @@
 
   function pauseGame() {
     clearStickInput();
+    clearKeyInput();
     gameState = "paused";
   }
 
   function resumeGame() {
     clearStickInput();
+    clearKeyInput();
     gameState = "playing";
     syncBgmPlayback();
   }
@@ -891,12 +930,14 @@
 
   function triggerGameOver() {
     clearStickInput();
+    clearKeyInput();
     saveHighScoreIfNeeded();
     gameState = "gameover";
   }
 
   function triggerVictory() {
     clearStickInput();
+    clearKeyInput();
     saveHighScoreIfNeeded();
     gameState = "victory";
   }
@@ -1099,19 +1140,61 @@
     }
   });
 
-  // PCテスト用のショートカットキー（I: 無敵切替, W: WAVE選択, B: ボスへ, C: カード選択）
+  // キーボード操作（矢印キー・WASD移動 / P・Esc一時停止 / デバッグショートカット）
   window.addEventListener("keydown", (e) => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(e.key)) {
+      e.preventDefault();
+    }
+
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      keysPressed.left = true;
+    } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      keysPressed.right = true;
+    } else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+      keysPressed.up = true;
+    } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+      keysPressed.down = true;
+    }
+
+    if (e.key === "p" || e.key === "P" || e.key === "Escape") {
+      if (gameState === "playing") {
+        ensureBgmPlaying();
+        pauseGame();
+      } else if (gameState === "paused") {
+        resumeGame();
+      }
+      return;
+    }
+
     if (!isDebugMode) return;
     if (gameState !== "playing" && gameState !== "choosing" && gameState !== "waveSelect") return;
     if (e.key === "i" || e.key === "I") {
       handleDebugAction("god");
-    } else if (e.key === "w" || e.key === "W") {
+    } else if (e.key === "v" || e.key === "V") {
       handleDebugAction("waveSelect");
     } else if (e.key === "b" || e.key === "B") {
       handleDebugAction("boss");
     } else if (e.key === "c" || e.key === "C") {
       handleDebugAction("card");
     }
+  });
+
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      keysPressed.left = false;
+    } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      keysPressed.right = false;
+    } else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+      keysPressed.up = false;
+    } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+      keysPressed.down = false;
+    }
+  });
+
+  window.addEventListener("blur", () => {
+    clearKeyInput();
+    clearStickInput();
+    isMouseDown = false;
   });
 
   function spawnEnemy() {
