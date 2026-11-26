@@ -399,12 +399,11 @@
     // 敵弾を全消去
     enemyBullets = [];
 
-    // 画面内の通常敵を撃破
+    // 画面内の通常敵を撃破（ボム撃破はウェーブ進行の撃破数にカウントしない）
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
       score += e.scoreValue;
-      killsInWave++;
       enemies.splice(i, 1);
     }
 
@@ -429,10 +428,6 @@
         triggerVictory();
         return true;
       }
-    } else if (killsInWave >= killsToNextWave) {
-      clearStickInput();
-      generateChoices();
-      gameState = "choosing";
     }
 
     return true;
