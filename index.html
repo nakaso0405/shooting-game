@@ -634,36 +634,27 @@
   function getStartButtonRect() {
     return {
       x: (canvas.width - 220) / 2,
-      y: 274,
+      y: 280,
       width: 220,
-      height: 46
+      height: 48
     };
   }
 
   function getMuteButtonRect() {
     return {
       x: (canvas.width - 190) / 2,
-      y: 330,
+      y: 338,
       width: 190,
-      height: 36
+      height: 38
     };
   }
 
   function getResetButtonRect() {
     return {
       x: (canvas.width - 190) / 2,
-      y: 376,
+      y: 386,
       width: 190,
-      height: 36
-    };
-  }
-
-  function getMenuRetryButtonRect() {
-    return {
-      x: (canvas.width - 190) / 2,
-      y: 422,
-      width: 190,
-      height: 36
+      height: 38
     };
   }
 
@@ -697,27 +688,36 @@
   function getResumeButtonRect() {
     return {
       x: (canvas.width - 210) / 2,
-      y: 220,
+      y: 212,
       width: 210,
-      height: 44
+      height: 42
+    };
+  }
+
+  function getPauseRetryButtonRect() {
+    return {
+      x: (canvas.width - 210) / 2,
+      y: 264,
+      width: 210,
+      height: 42
     };
   }
 
   function getPauseMuteButtonRect() {
     return {
       x: (canvas.width - 210) / 2,
-      y: 278,
+      y: 316,
       width: 210,
-      height: 44
+      height: 42
     };
   }
 
   function getPauseMenuButtonRect() {
     return {
       x: (canvas.width - 210) / 2,
-      y: 336,
+      y: 368,
       width: 210,
-      height: 44
+      height: 42
     };
   }
 
@@ -812,8 +812,8 @@
       y: 85,
       width: 128,
       height: 82,
-      hp: 1100,
-      maxHp: 1100,
+      hp: 900,
+      maxHp: 900,
       vx: 3.9,
       shootTimer: 0,
       patternCount: 0,
@@ -980,8 +980,6 @@
       } else if (isPointInRect(x, y, getResetButtonRect())) {
         ensureBgmPlaying();
         confirmReset = true;
-      } else if (isPointInRect(x, y, getMenuRetryButtonRect())) {
-        startNewGame();
       } else {
         ensureBgmPlaying();
       }
@@ -991,6 +989,8 @@
     if (gameState === "paused") {
       if (isPointInRect(x, y, getResumeButtonRect())) {
         resumeGame();
+      } else if (isPointInRect(x, y, getPauseRetryButtonRect())) {
+        startNewGame();
       } else if (isPointInRect(x, y, getPauseMuteButtonRect())) {
         toggleMute();
       } else if (isPointInRect(x, y, getPauseMenuButtonRect())) {
@@ -1629,7 +1629,8 @@
     } else {
       boss.winderAngle += 0.045;
 
-      if (boss.subPatternTimer >= 480) {
+      // 3つの攻撃パターン（各120フレーム = 計360フレームでループ）
+      if (boss.subPatternTimer >= 360) {
         boss.subPatternTimer = 0;
       }
 
@@ -1673,28 +1674,6 @@
             vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
             damage: 2, color: "#ffff00"
           });
-        }
-      } else if (mode === 3) {
-        if (boss.shootTimer % 40 === 0 && boss.shootTimer < 160) {
-          for (let side = -1; side <= 1; side += 2) {
-            enemyBullets.push({
-              x: cx + side * 40, y: cy, width: 12, height: 12,
-              vx: side * 3.0, vy: -5.0,
-              damage: 2, color: "#9c27b0",
-              isHoming: true
-            });
-          }
-        }
-      }
-
-      for (const eb of enemyBullets) {
-        if (eb.isHoming) {
-          const targetX = player.x + player.width / 2;
-          const targetY = player.y + player.height / 2;
-          const angle = Math.atan2(targetY - eb.y, targetX - eb.x);
-          const homingSpeed = 5.8;
-          eb.vx = Math.cos(angle) * homingSpeed;
-          eb.vy = Math.sin(angle) * homingSpeed;
         }
       }
 
@@ -1758,7 +1737,7 @@
       ctx.fillStyle = "#ff4466";
       ctx.fillRect(barX, boss.y - 24, barWidth * Math.max(0, boss.hp / boss.maxHp), 8);
 
-      const modeNames = ["NORMAL BARRAGE", "DOUBLE WINDER", "SNIPER RUSH", "HOMING SWARM"];
+      const modeNames = ["NORMAL BARRAGE", "DOUBLE WINDER", "SNIPER RUSH"];
       ctx.fillStyle = "#ff7799";
       ctx.font = "bold 12px sans-serif";
       ctx.textAlign = "center";
@@ -1917,18 +1896,28 @@
     ctx.fillStyle = "#00ffcc";
     ctx.font = "bold 28px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("PAUSED", canvas.width / 2, 165);
+    ctx.fillText("PAUSED", canvas.width / 2, 160);
 
     ctx.fillStyle = "#cccccc";
     ctx.font = "14px sans-serif";
-    ctx.fillText("WAVE " + wave + "  |  SCORE: " + score, canvas.width / 2, 195);
+    ctx.fillText("WAVE " + wave + "  |  SCORE: " + score, canvas.width / 2, 190);
 
     const resumeBtn = getResumeButtonRect();
     ctx.fillStyle = "#00ffcc";
     ctx.fillRect(resumeBtn.x, resumeBtn.y, resumeBtn.width, resumeBtn.height);
     ctx.fillStyle = "#05050a";
     ctx.font = "bold 16px sans-serif";
-    ctx.fillText("ゲームに戻る", canvas.width / 2, resumeBtn.y + 28);
+    ctx.fillText("ゲームに戻る", canvas.width / 2, resumeBtn.y + 27);
+
+    const retryBtn = getPauseRetryButtonRect();
+    ctx.fillStyle = "#102826";
+    ctx.strokeStyle = "#80ffea";
+    ctx.lineWidth = 2;
+    ctx.fillRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
+    ctx.strokeRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
+    ctx.fillStyle = "#80ffea";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText("リトライ（最初から）", canvas.width / 2, retryBtn.y + 27);
 
     const muteBtn = getPauseMuteButtonRect();
     ctx.fillStyle = isMuted ? "#261829" : "#12242b";
@@ -1938,7 +1927,7 @@
     ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
     ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
     ctx.font = "bold 14px sans-serif";
-    ctx.fillText(isMuted ? "BGM: オフ（タップでオン）" : "BGM: オン（タップでオフ）", canvas.width / 2, muteBtn.y + 27);
+    ctx.fillText(isMuted ? "BGM: オフ（タップでオン）" : "BGM: オン（タップでオフ）", canvas.width / 2, muteBtn.y + 26);
 
     const menuBtn = getPauseMenuButtonRect();
     ctx.fillStyle = "#162032";
@@ -1948,7 +1937,7 @@
     ctx.strokeRect(menuBtn.x, menuBtn.y, menuBtn.width, menuBtn.height);
     ctx.fillStyle = "#ffd700";
     ctx.font = "bold 16px sans-serif";
-    ctx.fillText("メニューに戻る", canvas.width / 2, menuBtn.y + 28);
+    ctx.fillText("メニューに戻る", canvas.width / 2, menuBtn.y + 27);
   }
 
   function drawMenuScreen() {
@@ -1957,33 +1946,33 @@
     ctx.fillStyle = "#00ffcc";
     ctx.font = "bold 24px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("ROGUELIKE", canvas.width / 2, 98);
+    ctx.fillText("ROGUELIKE", canvas.width / 2, 102);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 28px sans-serif";
-    ctx.fillText("SHOOTING", canvas.width / 2, 133);
+    ctx.fillText("SHOOTING", canvas.width / 2, 137);
 
     ctx.fillStyle = "#111927";
     ctx.strokeStyle = "#ffd700";
     ctx.lineWidth = 2;
-    ctx.fillRect(55, 170, canvas.width - 110, 76);
-    ctx.strokeRect(55, 170, canvas.width - 110, 76);
+    ctx.fillRect(55, 176, canvas.width - 110, 76);
+    ctx.strokeRect(55, 176, canvas.width - 110, 76);
 
     ctx.fillStyle = "#ffd700";
     ctx.font = "bold 14px sans-serif";
-    ctx.fillText("HIGH SCORE", canvas.width / 2, 197);
+    ctx.fillText("HIGH SCORE", canvas.width / 2, 203);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 24px sans-serif";
-    ctx.fillText(String(highScore), canvas.width / 2, 229);
+    ctx.fillText(String(highScore), canvas.width / 2, 235);
 
     const startBtn = getStartButtonRect();
     ctx.fillStyle = "#00ffcc";
     ctx.fillRect(startBtn.x, startBtn.y, startBtn.width, startBtn.height);
 
     ctx.fillStyle = "#05050a";
-    ctx.font = "bold 18px sans-serif";
-    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 30);
+    ctx.font = "bold 19px sans-serif";
+    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 31);
 
     const muteBtn = getMuteButtonRect();
     ctx.fillStyle = isMuted ? "#261829" : "#12242b";
@@ -1994,7 +1983,7 @@
 
     ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
     ctx.font = "bold 13px sans-serif";
-    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 23);
+    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 24);
 
     if (confirmReset) {
       ctx.fillStyle = "#ff8899";
@@ -2029,24 +2018,13 @@
       ctx.strokeRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
 
       ctx.fillStyle = "#ff88a2";
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 23);
-
-      const retryBtn = getMenuRetryButtonRect();
-      ctx.fillStyle = "#102826";
-      ctx.strokeStyle = "#80ffea";
-      ctx.lineWidth = 1.5;
-      ctx.fillRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
-      ctx.strokeRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
-
-      ctx.fillStyle = "#80ffea";
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillText("リトライ（最初から）", canvas.width / 2, retryBtn.y + 23);
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 24);
     }
 
     ctx.fillStyle = "#8899aa";
     ctx.font = "13px sans-serif";
-    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 484);
+    ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 452);
 
     drawDebugOverlay();
   }
