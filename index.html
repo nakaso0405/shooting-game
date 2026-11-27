@@ -52,6 +52,7 @@
   const MAX_WAVE = 10;
   const MAX_BOMBS = 3;
   const MAX_BARRIERS = 3;
+  const MAX_PETS = 3;
 
   // BGM設定（ファイルがなくてもエラーにならない安全設計）
   function createSafeAudio(src) {
@@ -372,7 +373,7 @@
     barriers: 0,
     bombs: 0,
     homingLevel: 0,
-    petLevel: 0,
+    petCount: 0,
     fireInterval: 16,
     bulletCount: 1,
     bulletSpeed: 9,
@@ -397,8 +398,20 @@
     return isGodMode || player.invincibleTimer > 0 || player.barrierTimer > 0;
   }
 
+  // ペット身代わり処理（ペットがいる場合は1匹消費してダメージを肩代わり）
+  function tryConsumePetSacrifice() {
+    if (player.petCount <= 0) return false;
+    const pos = getPetPosition(player.petCount - 1);
+    player.petCount--;
+    player.invincibleTimer = Math.max(player.invincibleTimer, 45);
+    spawnExplosion(pos.x, pos.y, "item_barrier", 1.15);
+    return true;
+  }
+
   function damagePlayer(amount = 1) {
     if (isPlayerProtected()) return false;
+    if (tryConsumePetSacrifice()) return true;
+
     player.hp -= amount;
     player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
     spawnExplosion(player.x + player.width / 2, player.y + player.height / 2, "dash", 0.9);
@@ -461,11 +474,12 @@
     return true;
   }
 
-  // ペット（オプション機）
-  function getPetPosition() {
+  // ペット（オプション機・最大3匹）
+  function getPetPosition(index = 0) {
     const cx = player.x + player.width / 2;
     const cy = player.y + player.height / 2;
-    const angle = frameCount * 0.045;
+    const phaseOffset = (Math.PI * 2 * index) / Math.max(1, player.petCount);
+    const angle = frameCount * 0.045 + phaseOffset;
     return {
       x: cx + Math.cos(angle) * 36,
       y: cy + 8 + Math.sin(angle) * 22
@@ -473,52 +487,56 @@
   }
 
   function drawPet() {
-    if (player.petLevel <= 0) return;
-    const pos = getPetPosition();
+    if (player.petCount <= 0) return;
 
-    ctx.save();
-    ctx.fillStyle = "rgba(128, 255, 234, 0.22)";
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
-    ctx.fill();
+    for (let idx = 0; idx < player.petCount; idx++) {
+      const pos = getPetPosition(idx);
+      ctx.save();
+      ctx.fillStyle = "rgba(128, 255, 234, 0.22)";
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = "#80ffea";
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y - 8);
-    ctx.lineTo(pos.x + 8, pos.y);
-    ctx.lineTo(pos.x, pos.y + 8);
-    ctx.lineTo(pos.x - 8, pos.y);
-    ctx.closePath();
-    ctx.fill();
+      ctx.fillStyle = "#80ffea";
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y - 8);
+      ctx.lineTo(pos.x + 8, pos.y);
+      ctx.lineTo(pos.x, pos.y + 8);
+      ctx.lineTo(pos.x - 8, pos.y);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
 
-    ctx.fillStyle = "#ff4081";
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+      ctx.fillStyle = "#ff4081";
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   function firePetBullets() {
-    if (player.petLevel <= 0) return;
-    const interval = Math.max(10, 26 - (player.petLevel - 1) * 4);
+    if (player.petCount <= 0) return;
+    const interval = 20;
     if (frameCount % interval !== 0) return;
 
-    const pos = getPetPosition();
-    bullets.push({
-      x: pos.x - 2.5,
-      y: pos.y - 8,
-      width: 5,
-      height: 11,
-      vx: 0,
-      vy: player.bulletSpeed + 1.5,
-      damage: player.petLevel,
-      homing: false,
-      fromPet: true
-    });
+    for (let idx = 0; idx < player.petCount; idx++) {
+      const pos = getPetPosition(idx);
+      bullets.push({
+        x: pos.x - 2.5,
+        y: pos.y - 8,
+        width: 5,
+        height: 11,
+        vx: 0,
+        vy: player.bulletSpeed + 1.5,
+        damage: 1,
+        homing: false,
+        fromPet: true
+      });
+    }
   }
 
   function drawPlayerIllustration() {
@@ -847,8 +865,7 @@
     if (level <= 0) return Infinity;
     if (level === 1) return 6;
     if (level === 2) return 4;
-    if (level === 3) return 2;
-    return 1;
+    return 2;
   }
 
   // 星ランク制（★1〜★3）強化カード一覧
@@ -857,182 +874,151 @@
     return "★".repeat(s);
   }
 
-  function rollCardStars(card) {
-    const waveBoost = Math.min(0.24, (wave - 1) * 0.025);
-    const rareBias = card.rarity === "rare" ? 0.25 : 0;
-    const p3 = Math.min(0.45, 0.14 + waveBoost + rareBias);
-    const p2 = Math.min(0.55, 0.34 + waveBoost * 0.7 + rareBias * 0.5);
-    const r = Math.random();
-    if (r < p3) return 3;
-    if (r < p3 + p2) return 2;
-    return 1;
+  function rollCardStarsForFixedRank(fixedStars) {
+    return Math.max(1, Math.min(3, fixedStars || 1));
   }
 
   const upgradePool = [
     {
       id: "spreadBasic",
       minWave: 1,
+      fixedStars: 2,
       rarity: "normal",
       baseTitle: "拡散ショット",
       applyWithStars: (starsCount) => {
-        const add = starsCount === 3 ? 3 : (starsCount === 2 ? 2 : 1);
+        const add = starsCount === 3 ? 2 : (starsCount === 2 ? 1 : 1);
         player.bulletCount = Math.min(7, player.bulletCount + add);
       },
       getDesc: (starsCount) => {
-        const add = starsCount === 3 ? 3 : (starsCount === 2 ? 2 : 1);
+        const add = starsCount === 3 ? 2 : (starsCount === 2 ? 1 : 1);
         return "弾の同時発射数を +" + add;
       }
     },
     {
       id: "spreadPlus",
-      minWave: 6,
+      minWave: 1,
+      fixedStars: 3,
       rarity: "normal",
       baseTitle: "拡散ショットプラス",
       applyWithStars: (starsCount) => {
-        const add = starsCount === 3 ? 4 : (starsCount === 2 ? 3 : 2);
+        const add = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
         player.bulletCount = Math.min(7, player.bulletCount + add);
       },
       getDesc: (starsCount) => {
-        const add = starsCount === 3 ? 4 : (starsCount === 2 ? 3 : 2);
+        const add = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
         return "弾の同時発射数を +" + add;
       }
     },
     {
       id: "rapid",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "超連射エンジン",
-      applyWithStars: (starsCount) => {
-        const factor = starsCount === 3 ? 0.62 : (starsCount === 2 ? 0.70 : 0.78);
-        player.fireInterval = Math.max(5, Math.floor(player.fireInterval * factor));
+      applyWithStars: () => {
+        player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78));
       },
-      getDesc: (starsCount) => {
-        if (starsCount === 3) return "弾の発射間隔を大幅に短縮";
-        if (starsCount === 2) return "弾の発射間隔を強めに短縮";
-        return "弾の発射間隔を短縮";
-      }
+      getDesc: () => "弾の発射間隔を短縮"
     },
     {
       id: "power",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "高威力プラズマ",
-      applyWithStars: (starsCount) => {
-        const add = starsCount === 3 ? 3 : (starsCount === 2 ? 2 : 1);
-        player.bulletDamage += add;
+      applyWithStars: () => {
+        player.bulletDamage += 1;
       },
-      getDesc: (starsCount) => {
-        const add = starsCount === 3 ? 3 : (starsCount === 2 ? 2 : 1);
-        return "弾の攻撃力 +" + add;
-      }
+      getDesc: () => "弾の攻撃力 +1"
     },
     {
       id: "heal",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "ナノリペア",
-      applyWithStars: (starsCount) => {
-        const hpGain = starsCount === 3 ? 2 : 1;
-        const toolGain = starsCount >= 2 ? 2 : 1;
-        player.maxHp += hpGain;
+      applyWithStars: () => {
+        player.maxHp += 1;
         player.hp = player.maxHp;
-        player.barriers = Math.min(MAX_BARRIERS, player.barriers + toolGain);
-        player.bombs = Math.min(MAX_BOMBS, player.bombs + toolGain);
+        player.barriers = Math.min(MAX_BARRIERS, player.barriers + 1);
+        player.bombs = Math.min(MAX_BOMBS, player.bombs + 1);
       },
-      getDesc: (starsCount) => {
-        if (starsCount === 3) return "最大HP+2全回復＆バリア・ボム+2";
-        if (starsCount === 2) return "最大HP+1全回復＆バリア・ボム+2";
-        return "最大HP+1全回復＆バリア・ボム+1";
-      }
+      getDesc: () => "最大HP+1全回復＆バリア・ボム+1"
     },
     {
       id: "speed",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "高速弾丸",
-      applyWithStars: (starsCount) => {
-        const add = starsCount === 3 ? 5.5 : (starsCount === 2 ? 4.0 : 2.5);
-        player.bulletSpeed += add;
+      applyWithStars: () => {
+        player.bulletSpeed += 2.5;
       },
-      getDesc: (starsCount) => {
-        const add = starsCount === 3 ? "大幅UP" : (starsCount === 2 ? "大きくUP" : "UP");
-        return "弾のスピード" + add;
-      }
+      getDesc: () => "弾のスピードUP"
     },
     {
       id: "moveSpeed",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "ブースターアクセル",
-      applyWithStars: (starsCount) => {
-        const add = starsCount === 3 ? 2.2 : (starsCount === 2 ? 1.6 : 1.0);
-        player.speed = Math.min(8.0, Number((player.speed + add).toFixed(1)));
+      applyWithStars: () => {
+        player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1)));
       },
-      getDesc: (starsCount) => {
-        const add = starsCount === 3 ? 2.2 : (starsCount === 2 ? 1.6 : 1.0);
-        return "自機の移動速度UP (+" + add.toFixed(1) + ")";
-      }
+      getDesc: () => "自機の移動速度UP (+1.0)"
     },
     {
       id: "bulletSize",
+      minWave: 1,
+      fixedStars: 1,
       rarity: "normal",
       baseTitle: "ビッグバレット",
-      applyWithStars: (starsCount) => {
-        const wAdd = starsCount === 3 ? 7 : (starsCount === 2 ? 5 : 3);
-        const hAdd = starsCount === 3 ? 9 : (starsCount === 2 ? 6 : 4);
-        player.bulletWidth = Math.min(24, player.bulletWidth + wAdd);
-        player.bulletHeight = Math.min(34, player.bulletHeight + hAdd);
+      applyWithStars: () => {
+        player.bulletWidth = Math.min(24, player.bulletWidth + 3);
+        player.bulletHeight = Math.min(34, player.bulletHeight + 4);
       },
-      getDesc: (starsCount) => {
-        if (starsCount === 3) return "弾のサイズを特大UP";
-        if (starsCount === 2) return "弾のサイズを大きくUP";
-        return "弾のサイズUP";
-      }
+      getDesc: () => "弾のサイズUP"
     },
     {
       id: "homing",
+      minWave: 1,
+      fixedStars: 2,
       rarity: "normal",
       baseTitle: "ホーミング弾",
-      applyWithStars: (starsCount) => {
-        const gain = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
-        player.homingLevel = Math.min(4, player.homingLevel + gain);
+      applyWithStars: () => {
+        player.homingLevel = Math.min(3, player.homingLevel + 1);
       },
-      getDesc: (starsCount) => {
-        const gain = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
-        const nextLv = Math.min(4, player.homingLevel + gain);
+      getDesc: () => {
+        const nextLv = Math.min(3, player.homingLevel + 1);
         return getHomingInterval(nextLv) + "発に1回、追尾弾が発射される";
       }
     },
     {
       id: "pet",
+      minWave: 1,
+      fixedStars: 2,
       rarity: "normal",
-      baseTitle: "ペット召喚 / 強化",
-      applyWithStars: (starsCount) => {
-        const gain = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
-        player.petLevel = Math.min(5, player.petLevel + gain);
+      baseTitle: "ペット召喚",
+      applyWithStars: () => {
+        player.petCount = Math.min(MAX_PETS, player.petCount + 1);
       },
-      getDesc: (starsCount) => {
-        const gain = starsCount === 3 ? 2 : (starsCount === 2 ? 2 : 1);
-        const nextLv = Math.min(5, player.petLevel + gain);
-        if (player.petLevel <= 0) {
-          return nextLv >= 2 ? "ペット召喚＆即強化 (Lv." + nextLv + ")" : "自機の周りを回りながら自動攻撃";
-        }
-        return "ペット強化 Lv." + nextLv + "（攻撃力＆連射UP）";
+      getDesc: () => {
+        const nextCount = Math.min(MAX_PETS, player.petCount + 1);
+        return "ペット追加（最大" + MAX_PETS + "匹 / 現在" + nextCount + "匹・被弾1回肩代わり）";
       }
     },
     {
       id: "hyperBlitz",
       minWave: 3,
+      fixedStars: 3,
       rarity: "rare",
       baseTitle: "ハイパーブリッツ",
-      applyWithStars: (starsCount) => {
-        const spdAdd = starsCount === 3 ? 2.6 : (starsCount === 2 ? 1.9 : 1.3);
-        const wAdd = starsCount === 3 ? 9 : (starsCount === 2 ? 7 : 5);
-        const hAdd = starsCount === 3 ? 11 : (starsCount === 2 ? 8 : 6);
-        player.speed = Math.min(8.5, Number((player.speed + spdAdd).toFixed(1)));
-        player.bulletWidth = Math.min(24, player.bulletWidth + wAdd);
-        player.bulletHeight = Math.min(34, player.bulletHeight + hAdd);
+      applyWithStars: () => {
+        player.speed = Math.min(8.0, Number((player.speed + 1.3).toFixed(1)));
+        player.bulletWidth = Math.min(24, player.bulletWidth + 5);
+        player.bulletHeight = Math.min(34, player.bulletHeight + 6);
       },
-      getDesc: (starsCount) => {
-        if (starsCount === 3) return "超スピードUP＆特大巨大弾化";
-        if (starsCount === 2) return "高スピードUP＆強力巨大弾化";
-        return "移動速度UP＆巨大弾化";
-      }
+      getDesc: () => "移動速度UP＆巨大弾化"
     }
   ];
 
@@ -1058,8 +1044,8 @@
   function generateChoices() {
     const eligiblePool = upgradePool.filter((u) => {
       if (u.minWave && wave < u.minWave) return false;
-      if (u.id === "homing" && player.homingLevel >= 4) return false;
-      if (u.id === "pet" && player.petLevel >= 5) return false;
+      if (u.id === "homing" && player.homingLevel >= 3) return false;
+      if (u.id === "pet" && player.petCount >= MAX_PETS) return false;
       return true;
     });
 
@@ -1067,7 +1053,7 @@
     choices = [];
     while (choices.length < 3 && remaining.length > 0) {
       const pickedCard = pickWeightedCard(remaining);
-      const starsCount = rollCardStars(pickedCard);
+      const starsCount = rollCardStarsForFixedRank(pickedCard.fixedStars);
       choices.push({
         card: pickedCard,
         stars: starsCount,
@@ -1232,7 +1218,7 @@
     player.barriers = 0;
     player.bombs = 0;
     player.homingLevel = 0;
-    player.petLevel = 0;
+    player.petCount = 0;
     player.fireInterval = 16;
     player.bulletCount = 1;
     player.bulletSpeed = 9;
