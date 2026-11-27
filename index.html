@@ -45,6 +45,7 @@
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
 
+  // ゲーム定数
   const HIGH_SCORE_KEY = "roguelike_shooting_highscore_v1";
   const PLAYER_INVINCIBLE_DURATION = 90;
   const BARRIER_ITEM_DURATION = 300;
@@ -55,8 +56,10 @@
   const MAX_PETS = 3;
   const ENEMY_DROP_CHANCE = 0.035;
   const SKY_ITEM_SPAWN_INTERVAL = 1800;
+  const MID_BOSS_BOMB_DAMAGE = 28;
+  const FINAL_BOSS_BOMB_DAMAGE = 95;
 
-  // BGM設定（ファイルがなくてもエラーにならない安全設計）
+  // BGM管理
   function createSafeAudio(src) {
     try {
       const audio = new Audio(src);
@@ -73,18 +76,14 @@
   const gameBgm = createSafeAudio("./bgm.mp3");
   let isMuted = false;
 
-  // 制作者向けデバッグモード
+  // デバッグ状態
   let isDebugMode = false;
   let isGodMode = false;
   let secretTapCount = 0;
   let lastSecretTapTime = 0;
 
-  function getTargetBgm() {
-    return (gameState === "menu" || gameState === "encyclopedia") ? menuBgm : gameBgm;
-  }
-
   function syncBgmPlayback() {
-    const target = getTargetBgm();
+    const target = (gameState === "menu" || gameState === "encyclopedia") ? menuBgm : gameBgm;
     const other = target === menuBgm ? gameBgm : menuBgm;
 
     if (other && !other.paused) {
@@ -108,7 +107,7 @@
     syncBgmPlayback();
   }
 
-  // 画像の安全読み込み（読み込み前・失敗時は自動でイラスト図形にフォールバック）
+  // 画像管理
   function createSafeImage(src) {
     const img = new Image();
     img.hasError = false;
@@ -130,20 +129,19 @@
   };
 
   function drawSpriteIfReady(img, x, y, width, height) {
-    if (img && !img.hasError && img.complete && img.naturalWidth > 0) {
-      try {
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, x, y, width, height);
-        ctx.restore();
-        return true;
-      } catch (e) {
-        return false;
-      }
+    if (!img || img.hasError || !img.complete || img.naturalWidth <= 0) return false;
+    try {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, x, y, width, height);
+      ctx.restore();
+      return true;
+    } catch (e) {
+      return false;
     }
-    return false;
   }
 
+  // ハイスコア管理
   function loadHighScore() {
     try {
       const saved = localStorage.getItem(HIGH_SCORE_KEY);
@@ -155,13 +153,11 @@
   }
 
   function saveHighScoreIfNeeded() {
-    if (isDebugMode) return;
-    if (score > highScore) {
-      highScore = score;
-      try {
-        localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
-      } catch (e) {}
-    }
+    if (isDebugMode || score <= highScore) return;
+    highScore = score;
+    try {
+      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    } catch (e) {}
   }
 
   function resetHighScore() {
@@ -172,7 +168,8 @@
     confirmReset = false;
   }
 
-  // ゲーム状態: "menu", "encyclopedia", "playing", "paused", "choosing", "waveSelect", "gameover", "victory"
+  // ゲーム状態
+  // "menu" | "encyclopedia" | "playing" | "paused" | "choosing" | "waveSelect" | "gameover" | "victory"
   let gameState = "menu";
   let confirmReset = false;
   let encyclopediaTab = "enemies";
@@ -186,7 +183,6 @@
   let shotSequenceCount = 0;
   let bombFlashTimer = 0;
 
-  // 図鑑データ
   const ENCYCLOPEDIA_ENEMIES = [
     { type: "normal", name: "ノーマル機", waveText: "WAVE 1〜", moveText: "まっすぐ下へ降下してくる基本の敵。" },
     { type: "tank", name: "タンク・アステロイド", waveText: "WAVE 2〜", moveText: "動きはゆっくりだが耐久力が高い大型機。" },
@@ -204,7 +200,7 @@
     { type: "bomb", name: "メガボム", usageText: "取得時：ストック（最大3個）", descText: "右下ボタン（Space）で敵弾消去＆全体攻撃。" }
   ];
 
-  // 星空背景（3層パララックス）
+  // 星空背景
   const STAR_COLORS = ["#ffffff", "#cceeff", "#aaddff", "#fff5cc", "#80ffea"];
   const stars = [];
 
@@ -261,23 +257,23 @@
   let lasers = [];
   let screenShake = 0;
 
-  function getExplosionPalette(type) {
-    if (type === "zigzag") return ["#e040fb", "#ea80fc", "#00ffcc", "#ffffff"];
-    if (type === "dash") return ["#ff6d00", "#ffab00", "#fff59d", "#ffffff"];
-    if (type === "tank") return ["#78909c", "#90a4ae", "#cfd8dc", "#ffffff"];
-    if (type === "weave") return ["#00e676", "#00c853", "#69f0ae", "#ffffff"];
-    if (type === "erratic") return ["#00b0ff", "#40c4ff", "#18ffff", "#ffffff"];
-    if (type === "mid") return ["#e040fb", "#00ffcc", "#ffd740", "#ffffff"];
-    if (type === "final") return ["#ff1744", "#ff9100", "#ffd600", "#00ffcc", "#ffffff"];
-    if (type === "item_heart") return ["#ff4081", "#ff80ab", "#ffffff"];
-    if (type === "item_barrier") return ["#00e5ff", "#84ffff", "#ffffff"];
-    if (type === "item_bomb") return ["#ff9100", "#ffd740", "#ffffff"];
-    if (type === "mini_bomb") return ["#ff6d00", "#ffab00", "#ffd740", "#ffffff"];
-    return ["#ff5252", "#ffab40", "#fff59d", "#ffffff"];
-  }
+  const EXPLOSION_PALETTES = {
+    zigzag: ["#e040fb", "#ea80fc", "#00ffcc", "#ffffff"],
+    dash: ["#ff6d00", "#ffab00", "#fff59d", "#ffffff"],
+    tank: ["#78909c", "#90a4ae", "#cfd8dc", "#ffffff"],
+    weave: ["#00e676", "#00c853", "#69f0ae", "#ffffff"],
+    erratic: ["#00b0ff", "#40c4ff", "#18ffff", "#ffffff"],
+    mid: ["#e040fb", "#00ffcc", "#ffd740", "#ffffff"],
+    final: ["#ff1744", "#ff9100", "#ffd600", "#00ffcc", "#ffffff"],
+    item_heart: ["#ff4081", "#ff80ab", "#ffffff"],
+    item_barrier: ["#00e5ff", "#84ffff", "#ffffff"],
+    item_bomb: ["#ff9100", "#ffd740", "#ffffff"],
+    mini_bomb: ["#ff6d00", "#ffab00", "#ffd740", "#ffffff"],
+    normal: ["#ff5252", "#ffab40", "#fff59d", "#ffffff"]
+  };
 
   function spawnExplosion(x, y, type = "normal", scale = 1) {
-    const palette = getExplosionPalette(type);
+    const palette = EXPLOSION_PALETTES[type] || EXPLOSION_PALETTES.normal;
     const particleCount = Math.round(14 * scale);
 
     for (let i = 0; i < particleCount; i++) {
@@ -291,17 +287,18 @@
         size: (2.2 + Math.random() * 2.8) * Math.min(1.6, scale),
         color: palette[Math.floor(Math.random() * palette.length)],
         life: maxLife,
-        maxLife: maxLife
+        maxLife
       });
     }
 
+    const waveLife = Math.round(14 * Math.min(1.6, scale));
     shockwaves.push({
       x, y,
       radius: 4 * scale,
       maxRadius: 28 * scale,
       color: palette[0],
-      life: Math.round(14 * Math.min(1.6, scale)),
-      maxLife: Math.round(14 * Math.min(1.6, scale))
+      life: waveLife,
+      maxLife: waveLife
     });
 
     if (scale >= 2.0) {
@@ -424,7 +421,6 @@
     return isGodMode || player.invincibleTimer > 0 || player.barrierTimer > 0;
   }
 
-  // ペット身代わり処理（ペットがいる場合は1匹消費してダメージを肩代わり）
   function tryConsumePetSacrifice() {
     if (player.petCount <= 0) return false;
     const pos = getPetPosition(player.petCount - 1);
@@ -438,19 +434,15 @@
     if (isPlayerProtected()) return false;
     if (tryConsumePetSacrifice()) return true;
 
-    player.hp -= amount;
+    player.hp = Math.max(0, player.hp - amount);
     player.invincibleTimer = PLAYER_INVINCIBLE_DURATION;
     spawnExplosion(player.x + player.width / 2, player.y + player.height / 2, "dash", 0.9);
-    if (player.hp <= 0) {
-      player.hp = 0;
-      triggerGameOver();
-    }
+    if (player.hp <= 0) triggerGameOver();
     return true;
   }
 
   function useBarrier() {
-    if (gameState !== "playing") return false;
-    if (player.barriers <= 0 || player.barrierTimer > 0) return false;
+    if (gameState !== "playing" || player.barriers <= 0 || player.barrierTimer > 0) return false;
     player.barriers--;
     player.barrierTimer = BARRIER_ITEM_DURATION;
     spawnExplosion(player.x + player.width / 2, player.y + player.height / 2, "item_barrier", 1.3);
@@ -458,8 +450,7 @@
   }
 
   function useBomb() {
-    if (gameState !== "playing") return false;
-    if (player.bombs <= 0) return false;
+    if (gameState !== "playing" || player.bombs <= 0) return false;
 
     player.bombs--;
     bombFlashTimer = 18;
@@ -477,30 +468,15 @@
     }
 
     if (boss) {
-      const bombDamage = boss.type === "mid" ? 28 : 95;
+      const bombDamage = boss.type === "mid" ? MID_BOSS_BOMB_DAMAGE : FINAL_BOSS_BOMB_DAMAGE;
       boss.hp -= bombDamage;
       spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "item_bomb", 1.8);
-
-      if (boss.type === "mid" && boss.hp <= 0) {
-        spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "mid", 2.1);
-        score += 1000;
-        boss = null;
-        clearStickInput();
-        generateChoices();
-        gameState = "choosing";
-        return true;
-      } else if (boss.type === "final" && boss.hp <= 0) {
-        spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "final", 2.8);
-        score += 3000;
-        boss = null;
-        triggerVictory();
-        return true;
-      }
+      if (checkBossDefeated()) return true;
     }
     return true;
   }
 
-  // ペット（オプション機・最大3匹）
+  // ペット（最大3匹）
   function getPetPosition(index = 0) {
     const cx = player.x + player.width / 2;
     const cy = player.y + player.height / 2;
@@ -545,9 +521,7 @@
   }
 
   function firePetBullets() {
-    if (player.petCount <= 0) return;
-    const interval = 20;
-    if (frameCount % interval !== 0) return;
+    if (player.petCount <= 0 || frameCount % 20 !== 0) return;
 
     for (let idx = 0; idx < player.petCount; idx++) {
       const pos = getPetPosition(idx);
@@ -629,9 +603,9 @@
       ctx.fill();
     }
 
+    const cx = player.x + player.width / 2;
+    const cy = player.y + player.height / 2;
     if (hasBarrier) {
-      const cx = player.x + player.width / 2;
-      const cy = player.y + player.height / 2;
       const isExpiring = player.barrierTimer < 75 && Math.floor(player.barrierTimer / 4) % 2 === 0;
       if (!isExpiring) {
         ctx.fillStyle = "rgba(0, 229, 255, 0.16)";
@@ -645,8 +619,6 @@
         ctx.stroke();
       }
     } else if (player.invincibleTimer > 0 || isGodMode) {
-      const cx = player.x + player.width / 2;
-      const cy = player.y + player.height / 2;
       ctx.strokeStyle = isGodMode ? "#ffd700" : "#80ffff";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -657,7 +629,7 @@
     ctx.restore();
   }
 
-  // 操作入力（キーボード＆タッチ相対スライド）
+  // 入力処理
   const keysPressed = { left: false, right: false, up: false, down: false };
 
   function clearKeyInput() {
@@ -738,8 +710,7 @@
       clampPlayerPosition();
     }
 
-    if (!dragInput.active) return;
-    if (dragInput.pendingDx === 0 && dragInput.pendingDy === 0) return;
+    if (!dragInput.active || (dragInput.pendingDx === 0 && dragInput.pendingDy === 0)) return;
 
     const sensitivity = 0.55 * (player.speed / BASE_PLAYER_SPEED);
     const maxStep = player.speed * 1.65;
@@ -751,6 +722,7 @@
     clampPlayerPosition();
   }
 
+  // エンティティ配列
   let bullets = [];
   let miniBombs = [];
   let enemies = [];
@@ -876,7 +848,6 @@
       item.y += item.vy;
       item.wobblePhase += 0.08;
       item.x += Math.sin(item.wobblePhase) * 0.45;
-
       drawItem(item);
 
       if (isColliding(playerHitbox, item)) {
@@ -888,6 +859,7 @@
     }
   }
 
+  // 強化カード管理
   function getHomingInterval(level) {
     if (level <= 0) return Infinity;
     if (level === 1) return 6;
@@ -895,7 +867,6 @@
     return 2;
   }
 
-  // 星ランク制（★1〜★3）強化カード一覧
   function getStarLabel(starsCount) {
     const s = Math.max(1, Math.min(3, starsCount || 1));
     return "★".repeat(s);
@@ -909,33 +880,17 @@
 
   const upgradePool = [
     {
-      id: "rapid",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "超連射エンジン",
-      applyWithStars: () => {
-        player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78));
-      },
+      id: "rapid", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "超連射エンジン",
+      applyWithStars: () => { player.fireInterval = Math.max(5, Math.floor(player.fireInterval * 0.78)); },
       getDesc: () => "弾の発射間隔を短縮"
     },
     {
-      id: "power",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "高威力プラズマ",
-      applyWithStars: () => {
-        player.bulletDamage += 1;
-      },
+      id: "power", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "高威力プラズマ",
+      applyWithStars: () => { player.bulletDamage += 1; },
       getDesc: () => "弾の攻撃力 +1"
     },
     {
-      id: "heal",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "ナノリペア",
+      id: "heal", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "ナノリペア",
       applyWithStars: () => {
         player.maxHp += 1;
         player.hp = player.maxHp;
@@ -945,33 +900,17 @@
       getDesc: () => "最大HP+1全回復＆バリア・ボム+1"
     },
     {
-      id: "speed",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "高速弾丸",
-      applyWithStars: () => {
-        player.bulletSpeed += 2.5;
-      },
+      id: "speed", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "高速弾丸",
+      applyWithStars: () => { player.bulletSpeed += 2.5; },
       getDesc: () => "弾のスピードUP"
     },
     {
-      id: "moveSpeed",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "ブースターアクセル",
-      applyWithStars: () => {
-        player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1)));
-      },
+      id: "moveSpeed", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "ブースターアクセル",
+      applyWithStars: () => { player.speed = Math.min(7.5, Number((player.speed + 1.0).toFixed(1))); },
       getDesc: () => "自機の移動速度UP (+1.0)"
     },
     {
-      id: "bulletSize",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "ビッグバレット",
+      id: "bulletSize", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "ビッグバレット",
       applyWithStars: () => {
         player.bulletWidth = Math.min(24, player.bulletWidth + 3);
         player.bulletHeight = Math.min(34, player.bulletHeight + 4);
@@ -979,89 +918,37 @@
       getDesc: () => "弾のサイズUP"
     },
     {
-      id: "sideShot",
-      minWave: 1,
-      fixedStars: 1,
-      rarity: "normal",
-      baseTitle: "サイドショット",
-      applyWithStars: () => {
-        player.sideShotLevel += 1;
-      },
-      getDesc: () => {
-        const nextLv = player.sideShotLevel + 1;
-        return "左右に横弾を発射（Lv." + nextLv + "）";
-      }
+      id: "sideShot", minWave: 1, fixedStars: 1, rarity: "normal", baseTitle: "サイドショット",
+      applyWithStars: () => { player.sideShotLevel += 1; },
+      getDesc: () => "左右に横弾を発射（Lv." + (player.sideShotLevel + 1) + "）"
     },
     {
-      id: "spreadBasic",
-      minWave: 1,
-      fixedStars: 2,
-      rarity: "normal",
-      baseTitle: "拡散ショット",
-      applyWithStars: () => {
-        player.bulletCount = Math.min(7, player.bulletCount + 1);
-      },
+      id: "spreadBasic", minWave: 1, fixedStars: 2, rarity: "normal", baseTitle: "拡散ショット",
+      applyWithStars: () => { player.bulletCount = Math.min(7, player.bulletCount + 1); },
       getDesc: () => "弾の同時発射数を +1"
     },
     {
-      id: "homing",
-      minWave: 1,
-      fixedStars: 2,
-      rarity: "normal",
-      baseTitle: "ホーミング弾",
-      applyWithStars: () => {
-        player.homingLevel = Math.min(3, player.homingLevel + 1);
-      },
-      getDesc: () => {
-        const nextLv = Math.min(3, player.homingLevel + 1);
-        return getHomingInterval(nextLv) + "発に1回、追尾弾が発射される";
-      }
+      id: "homing", minWave: 1, fixedStars: 2, rarity: "normal", baseTitle: "ホーミング弾",
+      applyWithStars: () => { player.homingLevel = Math.min(3, player.homingLevel + 1); },
+      getDesc: () => getHomingInterval(Math.min(3, player.homingLevel + 1)) + "発に1回、追尾弾が発射される"
     },
     {
-      id: "pet",
-      minWave: 1,
-      fixedStars: 2,
-      rarity: "normal",
-      baseTitle: "ペット召喚",
-      applyWithStars: () => {
-        player.petCount = Math.min(MAX_PETS, player.petCount + 1);
-      },
-      getDesc: () => {
-        const nextCount = Math.min(MAX_PETS, player.petCount + 1);
-        return "ペット追加（最大" + MAX_PETS + "匹 / 現在" + nextCount + "匹・被弾1回肩代わり）";
-      }
+      id: "pet", minWave: 1, fixedStars: 2, rarity: "normal", baseTitle: "ペット召喚",
+      applyWithStars: () => { player.petCount = Math.min(MAX_PETS, player.petCount + 1); },
+      getDesc: () => "ペット追加（最大" + MAX_PETS + "匹 / 現在" + Math.min(MAX_PETS, player.petCount + 1) + "匹・被弾1回肩代わり）"
     },
     {
-      id: "miniBomb",
-      minWave: 1,
-      fixedStars: 2,
-      rarity: "normal",
-      baseTitle: "ミニ爆弾",
-      applyWithStars: () => {
-        player.miniBombLevel += 1;
-      },
-      getDesc: () => {
-        const nextLv = player.miniBombLevel + 1;
-        return "高威力＆周囲を巻き込む爆弾発射（Lv." + nextLv + "）";
-      }
+      id: "miniBomb", minWave: 1, fixedStars: 2, rarity: "normal", baseTitle: "ミニ爆弾",
+      applyWithStars: () => { player.miniBombLevel += 1; },
+      getDesc: () => "高威力＆周囲を巻き込む爆弾発射（Lv." + (player.miniBombLevel + 1) + "）"
     },
     {
-      id: "spreadPlus",
-      minWave: 1,
-      fixedStars: 3,
-      rarity: "rare",
-      baseTitle: "拡散ショットプラス",
-      applyWithStars: () => {
-        player.bulletCount = Math.min(7, player.bulletCount + 2);
-      },
+      id: "spreadPlus", minWave: 1, fixedStars: 3, rarity: "rare", baseTitle: "拡散ショットプラス",
+      applyWithStars: () => { player.bulletCount = Math.min(7, player.bulletCount + 2); },
       getDesc: () => "弾の同時発射数を +2"
     },
     {
-      id: "hyperBlitz",
-      minWave: 1,
-      fixedStars: 3,
-      rarity: "rare",
-      baseTitle: "ハイパーブリッツ",
+      id: "hyperBlitz", minWave: 1, fixedStars: 3, rarity: "rare", baseTitle: "ハイパーブリッツ",
       applyWithStars: () => {
         player.speed = Math.min(8.0, Number((player.speed + 1.3).toFixed(1)));
         player.bulletWidth = Math.min(24, player.bulletWidth + 5);
@@ -1070,28 +957,19 @@
       getDesc: () => "移動速度UP＆巨大弾化"
     },
     {
-      id: "pierceLaser",
-      minWave: 1,
-      fixedStars: 3,
-      rarity: "rare",
-      baseTitle: "貫通レーザー",
-      applyWithStars: () => {
-        player.laserLevel += 1;
-      },
-      getDesc: () => {
-        const nextLv = player.laserLevel + 1;
-        return "敵を貫通する高出力レーザー発射（Lv." + nextLv + "）";
-      }
+      id: "pierceLaser", minWave: 1, fixedStars: 3, rarity: "rare", baseTitle: "貫通レーザー",
+      applyWithStars: () => { player.laserLevel += 1; },
+      getDesc: () => "敵を貫通する高出力レーザー発射（Lv." + (player.laserLevel + 1) + "）"
     }
   ];
 
   function getCardDisplayInfo(choiceItem) {
-    const card = choiceItem.card;
     const starsCount = choiceItem.stars;
-    const starText = getStarLabel(starsCount);
-    const title = starText + " " + card.baseTitle;
-    const desc = card.getDesc(starsCount);
-    return { title, desc, starsCount };
+    return {
+      title: getStarLabel(starsCount) + " " + choiceItem.card.baseTitle,
+      desc: choiceItem.card.getDesc(starsCount),
+      starsCount
+    };
   }
 
   function pickWeightedCard(pool) {
@@ -1127,7 +1005,25 @@
     }
   }
 
-  // UIボタン座標定義
+  // ボタン座標・描画ヘルパー
+  function drawButton(rect, { bg = "#162232", border = "#00ffcc", lineWidth = 1.5, textColor = "#00ffcc", font = "bold 14px sans-serif", label }) {
+    ctx.save();
+    ctx.fillStyle = bg;
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    if (border) {
+      ctx.strokeStyle = border;
+      ctx.lineWidth = lineWidth;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    }
+    ctx.fillStyle = textColor;
+    ctx.font = font;
+    ctx.textAlign = "center";
+    const metrics = ctx.measureText(label);
+    const textHeight = (metrics.actualBoundingBoxAscent || 10) + (metrics.actualBoundingBoxDescent || 4);
+    ctx.fillText(label, rect.x + rect.width / 2, rect.y + rect.height / 2 + textHeight * 0.35);
+    ctx.restore();
+  }
+
   function getCardRects() {
     const cardW = 300, cardH = 85, startX = (canvas.width - cardW) / 2, startY = 125, gap = 18;
     return choices.map((c, idx) => ({
@@ -1204,7 +1100,7 @@
     return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
   }
 
-  // ボス生成・ウェーブ進行
+  // ボス・ウェーブ進行
   function spawnMidBoss() {
     boss = {
       type: "mid", name: "Δ-GUARDIAN", x: canvas.width / 2 - 46, y: 80,
@@ -1241,6 +1137,13 @@
     else if (wave === 10) spawnFinalBoss();
   }
 
+  function enterChoosingState() {
+    clearStickInput();
+    clearKeyInput();
+    generateChoices();
+    gameState = "choosing";
+  }
+
   function handleDebugAction(actionId) {
     if (!isDebugMode) return;
     if (actionId === "god") {
@@ -1253,10 +1156,7 @@
     } else if (actionId === "boss") {
       enterWave(wave < 5 ? 5 : 10);
     } else if (actionId === "card") {
-      clearStickInput();
-      clearKeyInput();
-      generateChoices();
-      gameState = "choosing";
+      enterChoosingState();
     }
   }
 
@@ -1275,7 +1175,7 @@
     shockwaves = [];
     lasers = [];
     screenShake = 0;
-    isGodMode = isDebugMode ? true : false;
+    isGodMode = Boolean(isDebugMode);
     player.hp = 3;
     player.maxHp = 3;
     player.speed = BASE_PLAYER_SPEED;
@@ -1345,7 +1245,7 @@
     gameState = "victory";
   }
 
-  // タップ・クリック操作
+  // 操作イベント登録
   function handleTap(clientX, clientY) {
     const { x, y } = getCanvasCoords(clientX, clientY);
 
@@ -1390,16 +1290,8 @@
       const tabs = getEncyclopediaTabRects();
       const nav = getEncyclopediaPageRects();
 
-      if (isPointInRect(x, y, tabs.enemies)) {
-        encyclopediaTab = "enemies";
-        encyclopediaPage = 0;
-        return;
-      }
-      if (isPointInRect(x, y, tabs.items)) {
-        encyclopediaTab = "items";
-        encyclopediaPage = 0;
-        return;
-      }
+      if (isPointInRect(x, y, tabs.enemies)) { encyclopediaTab = "enemies"; encyclopediaPage = 0; return; }
+      if (isPointInRect(x, y, tabs.items)) { encyclopediaTab = "items"; encyclopediaPage = 0; return; }
       if (encyclopediaTab === "enemies") {
         const totalPages = Math.ceil(ENCYCLOPEDIA_ENEMIES.length / 4);
         if (encyclopediaPage > 0 && isPointInRect(x, y, nav.prev)) { encyclopediaPage--; return; }
@@ -1447,28 +1339,29 @@
     }
   }
 
+  function handlePlayingPointerDown(clientX, clientY, pointerId) {
+    syncBgmPlayback();
+    const pos = getCanvasCoords(clientX, clientY);
+
+    if (isDebugMode) {
+      for (const btn of getDebugButtonRects()) {
+        if (isPointInRect(pos.x, pos.y, btn)) { handleDebugAction(btn.id); return false; }
+      }
+    }
+    if (isPointInRect(pos.x, pos.y, getPauseButtonRect())) { pauseGame(); return false; }
+    if (isPointInRect(pos.x, pos.y, getBarrierButtonRect())) { useBarrier(); return false; }
+    if (isPointInRect(pos.x, pos.y, getBombButtonRect())) { useBomb(); return false; }
+
+    if (!dragInput.active) beginStickInput(clientX, clientY, pointerId);
+    return true;
+  }
+
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
     if (e.touches.length === 0) return;
-
-    if (gameState === "playing") {
-      syncBgmPlayback();
-      const t = e.changedTouches[0];
-      const pos = getCanvasCoords(t.clientX, t.clientY);
-
-      if (isDebugMode) {
-        for (const btn of getDebugButtonRects()) {
-          if (isPointInRect(pos.x, pos.y, btn)) { handleDebugAction(btn.id); return; }
-        }
-      }
-      if (isPointInRect(pos.x, pos.y, getPauseButtonRect())) { pauseGame(); return; }
-      if (isPointInRect(pos.x, pos.y, getBarrierButtonRect())) { useBarrier(); return; }
-      if (isPointInRect(pos.x, pos.y, getBombButtonRect())) { useBomb(); return; }
-
-      if (!dragInput.active) beginStickInput(t.clientX, t.clientY, t.identifier);
-    } else {
-      handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-    }
+    const t = e.changedTouches[0];
+    if (gameState === "playing") handlePlayingPointerDown(t.clientX, t.clientY, t.identifier);
+    else handleTap(t.clientX, t.clientY);
   }, { passive: false });
 
   canvas.addEventListener("touchmove", (e) => {
@@ -1499,20 +1392,7 @@
   let isMouseDown = false;
   canvas.addEventListener("mousedown", (e) => {
     if (gameState === "playing") {
-      syncBgmPlayback();
-      const pos = getCanvasCoords(e.clientX, e.clientY);
-
-      if (isDebugMode) {
-        for (const btn of getDebugButtonRects()) {
-          if (isPointInRect(pos.x, pos.y, btn)) { handleDebugAction(btn.id); return; }
-        }
-      }
-      if (isPointInRect(pos.x, pos.y, getPauseButtonRect())) { pauseGame(); return; }
-      if (isPointInRect(pos.x, pos.y, getBarrierButtonRect())) { useBarrier(); return; }
-      if (isPointInRect(pos.x, pos.y, getBombButtonRect())) { useBomb(); return; }
-
-      isMouseDown = true;
-      beginStickInput(e.clientX, e.clientY, "mouse");
+      if (handlePlayingPointerDown(e.clientX, e.clientY, "mouse")) isMouseDown = true;
     } else {
       handleTap(e.clientX, e.clientY);
     }
@@ -1565,7 +1445,7 @@
     isMouseDown = false;
   });
 
-  // 敵生成＆更新・描画
+  // 敵生成＆描画
   function spawnEnemy() {
     const spawnChance = Math.min(0.085, 0.035 + wave * 0.006);
     if (Math.random() >= spawnChance) return;
@@ -1792,7 +1672,20 @@
     return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   }
 
-  // 攻撃発射（通常弾・サイドショット・ミニ爆弾・貫通レーザー）
+  function recordEnemyKill(e, index) {
+    spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
+    maybeDropItemFromEnemy(e);
+    enemies.splice(index, 1);
+    score += e.scoreValue;
+    killsInWave++;
+    if (killsInWave >= killsToNextWave && wave !== 5 && wave !== 10) {
+      enterChoosingState();
+      return true;
+    }
+    return false;
+  }
+
+  // 攻撃発射
   function shootBullets() {
     shotSequenceCount++;
     const homingInterval = getHomingInterval(player.homingLevel);
@@ -1806,47 +1699,23 @@
       const offsetIndex = i - (count - 1) / 2;
       const angle = offsetIndex * spreadStep * 0.45;
       bullets.push({
-        x: centerX,
-        y: player.y,
-        width: player.bulletWidth,
-        height: player.bulletHeight,
+        x: centerX, y: player.y,
+        width: player.bulletWidth, height: player.bulletHeight,
         vx: Math.sin(angle) * player.bulletSpeed,
         vy: Math.cos(angle) * player.bulletSpeed,
         damage: player.bulletDamage,
         homing: isHomingShot,
-        fromPet: false,
-        fromSide: false
+        fromPet: false, fromSide: false
       });
     }
 
     if (player.sideShotLevel > 0) {
       const sideSpeed = Math.max(5.5, player.bulletSpeed * 0.72);
-      const sideDamage = Math.max(1, player.bulletDamage);
       const cy = player.y + player.height * 0.52;
-      bullets.push({
-        x: player.x - 4,
-        y: cy - 3,
-        width: 10,
-        height: 6,
-        vx: -sideSpeed,
-        vy: 0,
-        damage: sideDamage,
-        homing: false,
-        fromPet: false,
-        fromSide: true
-      });
-      bullets.push({
-        x: player.x + player.width - 6,
-        y: cy - 3,
-        width: 10,
-        height: 6,
-        vx: sideSpeed,
-        vy: 0,
-        damage: sideDamage,
-        homing: false,
-        fromPet: false,
-        fromSide: true
-      });
+      bullets.push(
+        { x: player.x - 4, y: cy - 3, width: 10, height: 6, vx: -sideSpeed, vy: 0, damage: player.bulletDamage, homing: false, fromPet: false, fromSide: true },
+        { x: player.x + player.width - 6, y: cy - 3, width: 10, height: 6, vx: sideSpeed, vy: 0, damage: player.bulletDamage, homing: false, fromPet: false, fromSide: true }
+      );
     }
   }
 
@@ -1855,24 +1724,18 @@
       const bombInterval = Math.max(45, 85 - (player.miniBombLevel - 1) * 10);
       if (frameCount % bombInterval === 0) {
         miniBombs.push({
-          x: player.x + player.width / 2 - 7,
-          y: player.y - 10,
-          width: 14,
-          height: 14,
-          vy: 6.2,
+          x: player.x + player.width / 2 - 7, y: player.y - 10,
+          width: 14, height: 14, vy: 6.2,
           damage: 4 + player.miniBombLevel * 2,
           blastRadius: 68 + (player.miniBombLevel - 1) * 10,
-          traveled: 0,
-          maxTravel: 260
+          traveled: 0, maxTravel: 260
         });
       }
     }
 
     if (player.laserLevel > 0) {
       const laserInterval = Math.max(70, 125 - (player.laserLevel - 1) * 15);
-      if (frameCount % laserInterval === 0) {
-        triggerPierceLaser();
-      }
+      if (frameCount % laserInterval === 0) triggerPierceLaser();
     }
   }
 
@@ -1882,34 +1745,14 @@
     const beamHalfWidth = 10 + (player.laserLevel - 1) * 3;
     const laserDamage = 5 + (player.laserLevel - 1) * 3;
 
-    lasers.push({
-      x: lx,
-      y: ly,
-      width: beamHalfWidth,
-      life: 16,
-      maxLife: 16
-    });
+    lasers.push({ x: lx, y: ly, width: beamHalfWidth, life: 16, maxLife: 16 });
 
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
-      if (e.y + e.height >= 0 && e.y <= ly) {
-        if (lx + beamHalfWidth >= e.x && lx - beamHalfWidth <= e.x + e.width) {
-          e.hp -= laserDamage;
-          spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, 0.75);
-          if (e.hp <= 0) {
-            spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
-            maybeDropItemFromEnemy(e);
-            enemies.splice(i, 1);
-            score += e.scoreValue;
-            killsInWave++;
-            if (killsInWave >= killsToNextWave && wave !== 5 && wave !== 10) {
-              clearStickInput();
-              generateChoices();
-              gameState = "choosing";
-              return;
-            }
-          }
-        }
+      if (e.y + e.height >= 0 && e.y <= ly && lx + beamHalfWidth >= e.x && lx - beamHalfWidth <= e.x + e.width) {
+        e.hp -= laserDamage;
+        spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, 0.75);
+        if (e.hp <= 0 && recordEnemyKill(e, i)) return;
       }
     }
 
@@ -1932,19 +1775,7 @@
       const ey = e.y + e.height / 2;
       if (Math.hypot(ex - cx, ey - cy) <= mb.blastRadius) {
         e.hp -= mb.damage;
-        if (e.hp <= 0) {
-          spawnExplosion(ex, ey, e.type, e.type === "tank" ? 1.35 : 1.0);
-          maybeDropItemFromEnemy(e);
-          enemies.splice(i, 1);
-          score += e.scoreValue;
-          killsInWave++;
-          if (killsInWave >= killsToNextWave && wave !== 5 && wave !== 10) {
-            clearStickInput();
-            generateChoices();
-            gameState = "choosing";
-            return true;
-          }
-        }
+        if (e.hp <= 0 && recordEnemyKill(e, i)) return true;
       }
     }
 
@@ -1972,9 +1803,7 @@
           if (isColliding(mb, enemies[j])) { hitTarget = true; break; }
         }
       }
-      if (!hitTarget && boss && isColliding(mb, boss)) {
-        hitTarget = true;
-      }
+      if (!hitTarget && boss && isColliding(mb, boss)) hitTarget = true;
 
       if (hitTarget) {
         miniBombs.splice(i, 1);
@@ -2022,6 +1851,13 @@
     return bestTarget;
   }
 
+  function getBulletColor(b) {
+    if (b.homing) return "#80ffea";
+    if (b.fromPet) return "#ff80ab";
+    if (b.fromSide) return "#69f0ae";
+    return "#ffff00";
+  }
+
   function updateAndDrawPlayerBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
@@ -2046,7 +1882,7 @@
       b.x += b.vx;
       b.y -= b.vy;
 
-      ctx.fillStyle = b.homing ? "#80ffea" : (b.fromPet ? "#ff80ab" : (b.fromSide ? "#69f0ae" : "#ffff00"));
+      ctx.fillStyle = getBulletColor(b);
       ctx.fillRect(b.x, b.y, b.width, b.height);
 
       if (b.y < -25 || b.y > canvas.height + 25 || b.x < -25 || b.x > canvas.width + 25) {
@@ -2063,11 +1899,10 @@
       boss = null;
       enemyBullets = [];
       miniBombs = [];
-      clearStickInput();
-      generateChoices();
-      gameState = "choosing";
+      enterChoosingState();
       return true;
-    } else if (boss.type === "final" && boss.hp <= 0) {
+    }
+    if (boss.type === "final" && boss.hp <= 0) {
       spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "final", 2.8);
       score += 3000;
       boss = null;
@@ -2079,7 +1914,6 @@
     return false;
   }
 
-  // ボス行動＆描画
   function updateAndDrawBoss() {
     if (!boss) return;
 
@@ -2094,14 +1928,14 @@
 
     if (boss.type === "mid") {
       if (boss.subPatternTimer >= 360) boss.subPatternTimer = 0;
-      const isSpreadMode = (boss.subPatternTimer >= 180 && boss.subPatternTimer < 240);
+      const isSpreadMode = boss.subPatternTimer >= 180 && boss.subPatternTimer < 240;
 
       if (isSpreadMode) {
         if (boss.shootTimer >= 10) {
           boss.shootTimer = 0;
           const bulletCount = 16;
           for (let i = 0; i < bulletCount; i++) {
-            const angle = (Math.PI * 2 * i) / bulletCount + (boss.subPatternTimer * 0.05);
+            const angle = (Math.PI * 2 * i) / bulletCount + boss.subPatternTimer * 0.05;
             enemyBullets.push({ x: cx - 6, y: cy - 6, width: 12, height: 12, vx: Math.cos(angle) * 3.2, vy: Math.sin(angle) * 3.2, damage: 1, color: "#00ffff" });
           }
         }
@@ -2117,9 +1951,7 @@
         }
       }
 
-      if (!drawSpriteIfReady(enemySprites.midBoss, boss.x, boss.y, boss.width, boss.height)) {
-        drawEnemyIllustration(boss);
-      }
+      if (!drawSpriteIfReady(enemySprites.midBoss, boss.x, boss.y, boss.width, boss.height)) drawEnemyIllustration(boss);
 
       const barWidth = 140, barX = (canvas.width - barWidth) / 2;
       ctx.fillStyle = "#333";
@@ -2166,9 +1998,7 @@
         });
       }
 
-      if (!drawSpriteIfReady(enemySprites.finalBoss, boss.x, boss.y, boss.width, boss.height)) {
-        drawEnemyIllustration(boss);
-      }
+      if (!drawSpriteIfReady(enemySprites.finalBoss, boss.x, boss.y, boss.width, boss.height)) drawEnemyIllustration(boss);
 
       const barWidth = 170, barX = (canvas.width - barWidth) / 2;
       ctx.fillStyle = "#333";
@@ -2197,7 +2027,7 @@
     }
   }
 
-  // 各種画面描画
+  // 画面描画
   function drawDebugOverlay() {
     if (!isDebugMode) return;
     ctx.save();
@@ -2215,16 +2045,13 @@
     if (gameState === "playing") {
       for (const btn of getDebugButtonRects()) {
         const activeGod = btn.id === "god" && isGodMode;
-        ctx.fillStyle = activeGod ? "#3a2e08" : "rgba(15, 25, 40, 0.9)";
-        ctx.strokeStyle = activeGod ? "#ffd700" : "#00ffcc";
-        ctx.lineWidth = 1.5;
-        ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
-        ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
-
-        ctx.fillStyle = activeGod ? "#ffd700" : "#ffffff";
-        ctx.font = "bold 11px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(btn.label, btn.x + btn.width / 2, btn.y + 17);
+        drawButton(btn, {
+          bg: activeGod ? "#3a2e08" : "rgba(15, 25, 40, 0.9)",
+          border: activeGod ? "#ffd700" : "#00ffcc",
+          textColor: activeGod ? "#ffd700" : "#ffffff",
+          font: "bold 11px sans-serif",
+          label: btn.label
+        });
       }
     }
     ctx.restore();
@@ -2242,24 +2069,18 @@
 
     const tabs = getEncyclopediaTabRects();
     const isEnemyTab = encyclopediaTab === "enemies";
-
-    ctx.fillStyle = isEnemyTab ? "#00ffcc" : "#162232";
-    ctx.strokeStyle = "#00ffcc";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(tabs.enemies.x, tabs.enemies.y, tabs.enemies.width, tabs.enemies.height);
-    ctx.strokeRect(tabs.enemies.x, tabs.enemies.y, tabs.enemies.width, tabs.enemies.height);
-    ctx.fillStyle = isEnemyTab ? "#05050a" : "#80ffea";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText("敵キャラクター", tabs.enemies.x + tabs.enemies.width / 2, tabs.enemies.y + 22);
-
-    ctx.fillStyle = !isEnemyTab ? "#ffd700" : "#162232";
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(tabs.items.x, tabs.items.y, tabs.items.width, tabs.items.height);
-    ctx.strokeRect(tabs.items.x, tabs.items.y, tabs.items.width, tabs.items.height);
-    ctx.fillStyle = !isEnemyTab ? "#05050a" : "#ffe57f";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText("アイテム", tabs.items.x + tabs.items.width / 2, tabs.items.y + 22);
+    drawButton(tabs.enemies, {
+      bg: isEnemyTab ? "#00ffcc" : "#162232",
+      border: "#00ffcc",
+      textColor: isEnemyTab ? "#05050a" : "#80ffea",
+      label: "敵キャラクター"
+    });
+    drawButton(tabs.items, {
+      bg: !isEnemyTab ? "#ffd700" : "#162232",
+      border: "#ffd700",
+      textColor: !isEnemyTab ? "#05050a" : "#ffe57f",
+      label: "アイテム"
+    });
 
     const nav = getEncyclopediaPageRects();
 
@@ -2271,9 +2092,10 @@
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
         const cardX = 20, cardY = 112 + i * 80, cardW = canvas.width - 40, cardH = 72;
+        const isBoss = entry.type === "midBoss" || entry.type === "finalBoss";
 
         ctx.fillStyle = "#121b2b";
-        ctx.strokeStyle = (entry.type === "midBoss" || entry.type === "finalBoss") ? "#ff77aa" : "#2a4a66";
+        ctx.strokeStyle = isBoss ? "#ff77aa" : "#2a4a66";
         ctx.lineWidth = 1.5;
         ctx.fillRect(cardX, cardY, cardW, cardH);
         ctx.strokeRect(cardX, cardY, cardW, cardH);
@@ -2288,7 +2110,7 @@
         });
 
         ctx.textAlign = "left";
-        ctx.fillStyle = (entry.type === "midBoss" || entry.type === "finalBoss") ? "#ff88bb" : "#ffd700";
+        ctx.fillStyle = isBoss ? "#ff88bb" : "#ffd700";
         ctx.font = "bold 13px sans-serif";
         ctx.fillText(entry.name, cardX + 68, cardY + 23);
 
@@ -2304,32 +2126,15 @@
       }
 
       if (encyclopediaPage > 0) {
-        ctx.fillStyle = "#162232";
-        ctx.strokeStyle = "#00ffcc";
-        ctx.lineWidth = 1.5;
-        ctx.fillRect(nav.prev.x, nav.prev.y, nav.prev.width, nav.prev.height);
-        ctx.strokeRect(nav.prev.x, nav.prev.y, nav.prev.width, nav.prev.height);
-        ctx.fillStyle = "#00ffcc";
-        ctx.font = "bold 12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("◀ 前のページ", nav.prev.x + nav.prev.width / 2, nav.prev.y + 20);
+        drawButton(nav.prev, { font: "bold 12px sans-serif", label: "◀ 前のページ" });
       }
-
       ctx.fillStyle = "#cccccc";
       ctx.font = "bold 12px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText((encyclopediaPage + 1) + " / " + totalPages, canvas.width / 2, nav.prev.y + 20);
 
       if (encyclopediaPage < totalPages - 1) {
-        ctx.fillStyle = "#162232";
-        ctx.strokeStyle = "#00ffcc";
-        ctx.lineWidth = 1.5;
-        ctx.fillRect(nav.next.x, nav.next.y, nav.next.width, nav.next.height);
-        ctx.strokeRect(nav.next.x, nav.next.y, nav.next.width, nav.next.height);
-        ctx.fillStyle = "#00ffcc";
-        ctx.font = "bold 12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("次のページ ▶", nav.next.x + nav.next.width / 2, nav.next.y + 20);
+        drawButton(nav.next, { font: "bold 12px sans-serif", label: "次のページ ▶" });
       }
     } else {
       for (let i = 0; i < ENCYCLOPEDIA_ITEMS.length; i++) {
@@ -2359,16 +2164,7 @@
       }
     }
 
-    ctx.fillStyle = "#162032";
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 2;
-    ctx.fillRect(nav.back.x, nav.back.y, nav.back.width, nav.back.height);
-    ctx.strokeRect(nav.back.x, nav.back.y, nav.back.width, nav.back.height);
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 14px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("タイトルに戻る", nav.back.x + nav.back.width / 2, nav.back.y + 24);
-
+    drawButton(nav.back, { bg: "#162032", border: "#ffd700", lineWidth: 2, textColor: "#ffd700", label: "タイトルに戻る" });
     drawDebugOverlay();
   }
 
@@ -2389,16 +2185,14 @@
     for (const r of getWaveSelectRects()) {
       const isBossWave = r.wave === 5 || r.wave === 10;
       const isCurrent = r.wave === wave;
-      ctx.fillStyle = isBossWave ? "#2a1638" : "#162232";
-      ctx.strokeStyle = isCurrent ? "#ffd700" : (isBossWave ? "#ff77aa" : "#00ffcc");
-      ctx.lineWidth = isCurrent ? 2.5 : 1.5;
-      ctx.fillRect(r.x, r.y, r.width, r.height);
-      ctx.strokeRect(r.x, r.y, r.width, r.height);
-
-      ctx.fillStyle = isCurrent ? "#ffd700" : (isBossWave ? "#ff99bb" : "#ffffff");
-      ctx.font = "bold 13px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(r.label, r.x + r.width / 2, r.y + 26);
+      drawButton(r, {
+        bg: isBossWave ? "#2a1638" : "#162232",
+        border: isCurrent ? "#ffd700" : (isBossWave ? "#ff77aa" : "#00ffcc"),
+        lineWidth: isCurrent ? 2.5 : 1.5,
+        textColor: isCurrent ? "#ffd700" : (isBossWave ? "#ff99bb" : "#ffffff"),
+        font: "bold 13px sans-serif",
+        label: r.label
+      });
     }
 
     drawDebugOverlay();
@@ -2429,48 +2223,28 @@
       24
     );
 
-    const pauseBtn = getPauseButtonRect();
-    ctx.fillStyle = "#162232";
-    ctx.strokeStyle = "#00ffcc";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(pauseBtn.x, pauseBtn.y, pauseBtn.width, pauseBtn.height);
-    ctx.strokeRect(pauseBtn.x, pauseBtn.y, pauseBtn.width, pauseBtn.height);
+    drawButton(getPauseButtonRect(), { font: "bold 11px sans-serif", label: "|| 一時停止" });
 
-    ctx.fillStyle = "#00ffcc";
-    ctx.font = "bold 11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("|| 一時停止", pauseBtn.x + pauseBtn.width / 2, pauseBtn.y + 16);
-
-    const barrierBtn = getBarrierButtonRect();
     const isBarrierActive = player.barrierTimer > 0;
     const hasBarrier = player.barriers > 0;
-    ctx.save();
-    ctx.fillStyle = isBarrierActive ? "rgba(0, 75, 95, 0.92)" : (hasBarrier ? "rgba(8, 34, 48, 0.9)" : "rgba(20, 24, 32, 0.72)");
-    ctx.strokeStyle = isBarrierActive ? "#84ffff" : (hasBarrier ? "#00e5ff" : "#556677");
-    ctx.lineWidth = 2;
-    ctx.fillRect(barrierBtn.x, barrierBtn.y, barrierBtn.width, barrierBtn.height);
-    ctx.strokeRect(barrierBtn.x, barrierBtn.y, barrierBtn.width, barrierBtn.height);
+    drawButton(getBarrierButtonRect(), {
+      bg: isBarrierActive ? "rgba(0, 75, 95, 0.92)" : (hasBarrier ? "rgba(8, 34, 48, 0.9)" : "rgba(20, 24, 32, 0.72)"),
+      border: isBarrierActive ? "#84ffff" : (hasBarrier ? "#00e5ff" : "#556677"),
+      lineWidth: 2,
+      textColor: isBarrierActive ? "#ffffff" : (hasBarrier ? "#84ffff" : "#778899"),
+      font: "bold 11.5px sans-serif",
+      label: isBarrierActive ? "SHIELD " + Math.ceil(player.barrierTimer / 60) + "s" : "BARRIER x" + player.barriers
+    });
 
-    ctx.fillStyle = isBarrierActive ? "#ffffff" : (hasBarrier ? "#84ffff" : "#778899");
-    ctx.font = "bold 11.5px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(isBarrierActive ? "SHIELD " + Math.ceil(player.barrierTimer / 60) + "s" : "BARRIER x" + player.barriers, barrierBtn.x + barrierBtn.width / 2, barrierBtn.y + 21);
-    ctx.restore();
-
-    const bombBtn = getBombButtonRect();
     const hasBomb = player.bombs > 0;
-    ctx.save();
-    ctx.fillStyle = hasBomb ? "rgba(42, 26, 8, 0.9)" : "rgba(20, 24, 32, 0.72)");
-    ctx.strokeStyle = hasBomb ? "#ff9100" : "#556677";
-    ctx.lineWidth = 2;
-    ctx.fillRect(bombBtn.x, bombBtn.y, bombBtn.width, bombBtn.height);
-    ctx.strokeRect(bombBtn.x, bombBtn.y, bombBtn.width, bombBtn.height);
-
-    ctx.fillStyle = hasBomb ? "#ffd740" : "#778899";
-    ctx.font = "bold 12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("BOMB x" + player.bombs, bombBtn.x + bombBtn.width / 2, bombBtn.y + 21);
-    ctx.restore();
+    drawButton(getBombButtonRect(), {
+      bg: hasBomb ? "rgba(42, 26, 8, 0.9)" : "rgba(20, 24, 32, 0.72)"),
+      border: hasBomb ? "#ff9100" : "#556677",
+      lineWidth: 2,
+      textColor: hasBomb ? "#ffd740" : "#778899",
+      font: "bold 12px sans-serif",
+      label: "BOMB x" + player.bombs
+    });
 
     drawDebugOverlay();
   }
@@ -2488,42 +2262,15 @@
     ctx.font = "14px sans-serif";
     ctx.fillText("WAVE " + wave + "  |  SCORE: " + score, canvas.width / 2, 190);
 
-    const resumeBtn = getResumeButtonRect();
-    ctx.fillStyle = "#00ffcc";
-    ctx.fillRect(resumeBtn.x, resumeBtn.y, resumeBtn.width, resumeBtn.height);
-    ctx.fillStyle = "#05050a";
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("ゲームに戻る", canvas.width / 2, resumeBtn.y + 27);
-
-    const retryBtn = getPauseRetryButtonRect();
-    ctx.fillStyle = "#102826";
-    ctx.strokeStyle = "#80ffea";
-    ctx.lineWidth = 2;
-    ctx.fillRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
-    ctx.strokeRect(retryBtn.x, retryBtn.y, retryBtn.width, retryBtn.height);
-    ctx.fillStyle = "#80ffea";
-    ctx.font = "bold 15px sans-serif";
-    ctx.fillText("リトライ（最初から）", canvas.width / 2, retryBtn.y + 27);
-
-    const muteBtn = getPauseMuteButtonRect();
-    ctx.fillStyle = isMuted ? "#261829" : "#12242b";
-    ctx.strokeStyle = isMuted ? "#ff7799" : "#00ffcc";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
-    ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
-    ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText(isMuted ? "BGM: オフ（タップでオソ）" : "BGM: オン（タップでオフ）", canvas.width / 2, muteBtn.y + 26);
-
-    const menuBtn = getPauseMenuButtonRect();
-    ctx.fillStyle = "#162032";
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 2;
-    ctx.fillRect(menuBtn.x, menuBtn.y, menuBtn.width, menuBtn.height);
-    ctx.strokeRect(menuBtn.x, menuBtn.y, menuBtn.width, menuBtn.height);
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("メニューに戻る", canvas.width / 2, menuBtn.y + 27);
+    drawButton(getResumeButtonRect(), { bg: "#00ffcc", border: null, textColor: "#05050a", font: "bold 16px sans-serif", label: "ゲームに戻る" });
+    drawButton(getPauseRetryButtonRect(), { bg: "#102826", border: "#80ffea", lineWidth: 2, textColor: "#80ffea", font: "bold 15px sans-serif", label: "リトライ（最初から）" });
+    drawButton(getPauseMuteButtonRect(), {
+      bg: isMuted ? "#261829" : "#12242b",
+      border: isMuted ? "#ff7799" : "#00ffcc",
+      textColor: isMuted ? "#ff88a8" : "#80ffea",
+      label: isMuted ? "BGM: オフ（タップでオン）" : "BGM: オン（タップでオフ）"
+    });
+    drawButton(getPauseMenuButtonRect(), { bg: "#162032", border: "#ffd700", lineWidth: 2, textColor: "#ffd700", font: "bold 16px sans-serif", label: "メニューに戻る" });
   }
 
   function drawMenuScreen() {
@@ -2552,67 +2299,27 @@
     ctx.font = "bold 24px sans-serif";
     ctx.fillText(String(highScore), canvas.width / 2, 218);
 
-    const startBtn = getStartButtonRect();
-    ctx.fillStyle = "#00ffcc";
-    ctx.fillRect(startBtn.x, startBtn.y, startBtn.width, startBtn.height);
-    ctx.fillStyle = "#05050a";
-    ctx.font = "bold 18px sans-serif";
-    ctx.fillText("ゲームスタート", canvas.width / 2, startBtn.y + 30);
-
-    const zukanBtn = getEncyclopediaButtonRect();
-    ctx.fillStyle = "#132238";
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 1.8;
-    ctx.fillRect(zukanBtn.x, zukanBtn.y, zukanBtn.width, zukanBtn.height);
-    ctx.strokeRect(zukanBtn.x, zukanBtn.y, zukanBtn.width, zukanBtn.height);
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText("図鑑（敵・アイテム）", canvas.width / 2, zukanBtn.y + 24);
-
-    const muteBtn = getMuteButtonRect();
-    ctx.fillStyle = isMuted ? "#261829" : "#12242b";
-    ctx.strokeStyle = isMuted ? "#ff7799" : "#00ffcc";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
-    ctx.strokeRect(muteBtn.x, muteBtn.y, muteBtn.width, muteBtn.height);
-    ctx.fillStyle = isMuted ? "#ff88a8" : "#80ffea";
-    ctx.font = "bold 12.5px sans-serif";
-    ctx.fillText(isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）", canvas.width / 2, muteBtn.y + 23);
+    drawButton(getStartButtonRect(), { bg: "#00ffcc", border: null, textColor: "#05050a", font: "bold 18px sans-serif", label: "ゲームスタート" });
+    drawButton(getEncyclopediaButtonRect(), { bg: "#132238", border: "#ffd700", lineWidth: 1.8, textColor: "#ffd700", label: "図鑑（敵・アイテム）" });
+    drawButton(getMuteButtonRect(), {
+      bg: isMuted ? "#261829" : "#12242b",
+      border: isMuted ? "#ff7799" : "#00ffcc",
+      textColor: isMuted ? "#ff88a8" : "#80ffea",
+      font: "bold 12.5px sans-serif",
+      label: isMuted ? "BGM: ミュート中（タップで再生）" : "BGM: 再生中（タップで消音）"
+    });
 
     if (confirmReset) {
       ctx.fillStyle = "#ff8899";
       ctx.font = "bold 12.5px sans-serif";
       ctx.fillText("ハイスコアを 0 にリセットしますか？", canvas.width / 2, 396);
-
-      const yesBtn = getConfirmYesButtonRect();
-      ctx.fillStyle = "#3a1420";
-      ctx.strokeStyle = "#ff5577";
-      ctx.lineWidth = 2;
-      ctx.fillRect(yesBtn.x, yesBtn.y, yesBtn.width, yesBtn.height);
-      ctx.strokeRect(yesBtn.x, yesBtn.y, yesBtn.width, yesBtn.height);
-      ctx.fillStyle = "#ff7799";
-      ctx.font = "bold 14px sans-serif";
-      ctx.fillText("リセットする", yesBtn.x + yesBtn.width / 2, yesBtn.y + 24);
-
-      const noBtn = getConfirmNoButtonRect();
-      ctx.fillStyle = "#162032";
-      ctx.strokeStyle = "#8899aa";
-      ctx.lineWidth = 2;
-      ctx.fillRect(noBtn.x, noBtn.y, noBtn.width, noBtn.height);
-      ctx.strokeRect(noBtn.x, noBtn.y, noBtn.width, noBtn.height);
-      ctx.fillStyle = "#e0e8f0";
-      ctx.font = "bold 14px sans-serif";
-      ctx.fillText("キャンセル", noBtn.x + noBtn.width / 2, noBtn.y + 24);
+      drawButton(getConfirmYesButtonRect(), { bg: "#3a1420", border: "#ff5577", lineWidth: 2, textColor: "#ff7799", label: "リセットする" });
+      drawButton(getConfirmNoButtonRect(), { bg: "#162032", border: "#8899aa", lineWidth: 2, textColor: "#e0e8f0", label: "キャンセル" });
     } else {
-      const resetBtn = getResetButtonRect();
-      ctx.fillStyle = "#1a1423";
-      ctx.strokeStyle = "#ff6688";
-      ctx.lineWidth = 1.5;
-      ctx.fillRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
-      ctx.strokeRect(resetBtn.x, resetBtn.y, resetBtn.width, resetBtn.height);
-      ctx.fillStyle = "#ff88a2";
-      ctx.font = "bold 13.5px sans-serif";
-      ctx.fillText("スコアをリセット", canvas.width / 2, resetBtn.y + 23);
+      drawButton(getResetButtonRect(), {
+        bg: "#1a1423", border: "#ff6688", textColor: "#ff88a2",
+        font: "bold 13.5px sans-serif", label: "スコアをリセット"
+      });
     }
 
     ctx.fillStyle = "#8899aa";
@@ -2620,29 +2327,6 @@
     ctx.fillText("WAVE 10 ラスボス撃破でクリア", canvas.width / 2, 466);
 
     drawDebugOverlay();
-  }
-
-  function drawBackToMenuButton(borderColor, textColor) {
-    const btn = getBackToMenuButtonRect();
-    ctx.fillStyle = "#162032";
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 2;
-    ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
-    ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
-    ctx.fillStyle = textColor;
-    ctx.font = "bold 16px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("メニューに戻る", canvas.width / 2, btn.y + 28);
-  }
-
-  function drawGameOverRetryButton() {
-    const btn = getGameOverRetryButtonRect();
-    ctx.fillStyle = "#00ffcc";
-    ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
-    ctx.fillStyle = "#05050a";
-    ctx.font = "bold 16px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("リトライ", canvas.width / 2, btn.y + 28);
   }
 
   function drawChoosingScreen() {
@@ -2659,10 +2343,10 @@
     ctx.font = "15px sans-serif";
     ctx.fillText("強化カードを1つ選んでください", canvas.width / 2, 95);
 
+    const starColors = { 1: "#ffd700", 2: "#80ffea", 3: "#ff99ff" };
     for (const r of getCardRects()) {
       const isRare = r.choice.rarity === "rare";
       const displayInfo = getCardDisplayInfo(r.choice);
-      const starColors = { 1: "#ffd700", 2: "#80ffea", 3: "#ff99ff" };
       const titleColor = starColors[displayInfo.starsCount] || "#ffd700";
 
       ctx.fillStyle = isRare ? "#2a1638" : (displayInfo.starsCount === 3 ? "#221636" : "#1a2234");
@@ -2703,8 +2387,8 @@
     ctx.font = "bold 16px sans-serif";
     ctx.fillText("HIGH SCORE: " + highScore, canvas.width / 2, canvas.height / 2 + 28);
 
-    drawGameOverRetryButton();
-    drawBackToMenuButton("#00ffcc", "#00ffcc");
+    drawButton(getGameOverRetryButtonRect(), { bg: "#00ffcc", border: null, textColor: "#05050a", font: "bold 16px sans-serif", label: "リトライ" });
+    drawButton(getBackToMenuButtonRect(), { bg: "#162032", border: "#00ffcc", lineWidth: 2, textColor: "#00ffcc", font: "bold 16px sans-serif", label: "メニューに戻る" });
     drawDebugOverlay();
   }
 
@@ -2730,7 +2414,7 @@
     ctx.font = "bold 16px sans-serif";
     ctx.fillText("HIGH SCORE: " + highScore, canvas.width / 2, canvas.height / 2 + 38);
 
-    drawBackToMenuButton("#ffd700", "#ffd700");
+    drawButton(getBackToMenuButtonRect(), { bg: "#162032", border: "#ffd700", lineWidth: 2, textColor: "#ffd700", font: "bold 16px sans-serif", label: "メニューに戻る" });
     drawDebugOverlay();
   }
 
@@ -2741,7 +2425,7 @@
 
     for (let i = 0; i < bullets.length; i++) {
       const b = bullets[i];
-      ctx.fillStyle = b.homing ? "#80ffea" : (b.fromPet ? "#ff80ab" : (b.fromSide ? "#69f0ae" : "#ffff00"));
+      ctx.fillStyle = getBulletColor(b);
       ctx.fillRect(b.x, b.y, b.width, b.height);
     }
     for (let i = 0; i < miniBombs.length; i++) {
@@ -2830,23 +2514,14 @@
                 e.hp -= bullets[j].damage;
                 bullets.splice(j, 1);
                 if (e.hp <= 0) {
-                  spawnExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type, e.type === "tank" ? 1.35 : 1.0);
-                  maybeDropItemFromEnemy(e);
-                  enemies.splice(i, 1);
-                  score += e.scoreValue;
-                  killsInWave++;
                   destroyed = true;
+                  if (recordEnemyKill(e, i)) break;
                 }
                 break;
               }
             }
             if (destroyed) {
-              if (killsInWave >= killsToNextWave) {
-                clearStickInput();
-                generateChoices();
-                gameState = "choosing";
-                break;
-              }
+              if (gameState === "choosing") break;
               continue;
             }
 
@@ -2854,23 +2529,25 @@
           }
         }
 
-        const playerHitboxForBullets = getPlayerHitbox();
-        for (let i = enemyBullets.length - 1; i >= 0; i--) {
-          const eb = enemyBullets[i];
-          eb.x += eb.vx;
-          eb.y += eb.vy;
-          ctx.fillStyle = eb.color || "#ff55aa";
-          ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
+        if (gameState === "playing") {
+          const playerHitboxForBullets = getPlayerHitbox();
+          for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            const eb = enemyBullets[i];
+            eb.x += eb.vx;
+            eb.y += eb.vy;
+            ctx.fillStyle = eb.color || "#ff55aa";
+            ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
 
-          if (!isPlayerProtected() && isColliding(playerHitboxForBullets, eb)) {
-            const hitDamage = eb.damage || 1;
-            enemyBullets.splice(i, 1);
-            if (damagePlayer(hitDamage)) break;
-            continue;
-          }
+            if (!isPlayerProtected() && isColliding(playerHitboxForBullets, eb)) {
+              const hitDamage = eb.damage || 1;
+              enemyBullets.splice(i, 1);
+              if (damagePlayer(hitDamage)) break;
+              continue;
+            }
 
-          if (eb.y > canvas.height + 20 || eb.x < -20 || eb.x > canvas.width + 20) {
-            enemyBullets.splice(i, 1);
+            if (eb.y > canvas.height + 20 || eb.x < -20 || eb.x > canvas.width + 20) {
+              enemyBullets.splice(i, 1);
+            }
           }
         }
 
